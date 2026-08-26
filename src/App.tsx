@@ -1,14 +1,38 @@
-import Header from './components/Header';
-import Hero from './components/Hero';
-import MenuSection from './components/MenuSection';
-import DiyBuilder from './components/DiyBuilder';
-import Footer from './components/Footer';
+import Header from './components/customer/Header';
+import Hero from './components/customer/Hero';
+import MenuSection from './components/customer/MenuSection';
+import DiyBuilder from './components/customer/DiyBuilder';
+import Footer from './components/customer/Footer';
+import AdminDashboard from './components/admin/AdminDashboard';
 import { useMenuController } from './hooks/useMenuController';
 import type { Product } from './models/MenuModel';
 import './App.css';
 
 function App() {
   const {
+    // Products State & Actions
+    products,
+    addProduct,
+    editProduct,
+    deleteProduct,
+    resetProducts,
+
+    // Inquiries State & Actions
+    inquiries,
+    submitInquiry,
+    resolveInquiry,
+    deleteInquiry,
+
+    // Inventory State & Actions
+    inventory,
+    auditLogs,
+    addInventoryItem,
+    logAuditRecord,
+    resetInventory,
+    stockMovements,
+    logStockMovement,
+    resetStockMovements,
+
     // Menu States & Actions
     activeCategory,
     setActiveCategory,
@@ -25,6 +49,10 @@ function App() {
     resetDiyBuilder,
     diyTotal
   } = useMenuController();
+
+  // Subdomain & query param routing
+  const isAdmin = window.location.hostname.startsWith('admin.') || 
+                  window.location.search.includes('admin=true');
 
   // Scroll Helper
   const scrollToSection = (id: string) => {
@@ -58,6 +86,29 @@ function App() {
       alert(`"${product.name}" selected as your chilled drink.`);
     }
   };
+
+  if (isAdmin) {
+    return (
+      <AdminDashboard
+        products={products}
+        addProduct={addProduct}
+        editProduct={editProduct}
+        deleteProduct={deleteProduct}
+        resetProducts={resetProducts}
+        inquiries={inquiries}
+        resolveInquiry={resolveInquiry}
+        deleteInquiry={deleteInquiry}
+        inventory={inventory}
+        auditLogs={auditLogs}
+        addInventoryItem={addInventoryItem}
+        logAuditRecord={logAuditRecord}
+        resetInventory={resetInventory}
+        stockMovements={stockMovements}
+        logStockMovement={logStockMovement}
+        resetStockMovements={resetStockMovements}
+      />
+    );
+  }
 
   return (
     <>
@@ -95,7 +146,7 @@ function App() {
       </main>
 
       {/* 5. Inquiries, Map & Contact Form (Footer View) */}
-      <Footer />
+      <Footer submitInquiry={submitInquiry} />
     </>
   );
 }

@@ -1,4 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@source "./App.tsx";
+@source "./components/**/*.tsx";
 
 :root {
   /* B.B.K. RAMYEON HAUZ Brand Colors */
@@ -31,109 +35,108 @@
   --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
 
-html {
-  scroll-behavior: smooth;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  overflow-x: hidden;
-}
-
-body {
-  font-family: var(--sans);
-  font-size: 16px;
-  line-height: 1.6;
-  color: var(--text);
-  background-color: var(--bg);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  width: 100%;
-  margin: 0;
-  padding: 0;
-  overflow-x: hidden;
-  display: block;
-}
-
-#root {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  width: 100%;
-  max-width: 100%;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
-  transition: var(--transition);
-}
-
-button {
-  font-family: var(--sans);
-  cursor: pointer;
-  border: none;
-  background: none;
-  transition: var(--transition);
-}
-
-input, textarea {
-  font-family: var(--sans);
-}
-
-/* Common Section Layout Rules */
-.section-header {
-  text-align: center;
-  max-width: 680px;
-  margin: 0 auto 48px;
-}
-
-.section-header.align-left {
-  text-align: left;
-  margin-left: 0;
-}
-
-.section-subtitle {
-  display: inline-block;
-  font-size: 14px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 2px;
-  color: var(--color-burnt-orange);
-  margin-bottom: 12px;
-}
-
-.section-title {
-  font-size: 38px;
-  font-weight: 800;
-  line-height: 1.2;
-  color: var(--color-dark-brown);
-  margin-bottom: 16px;
-}
-
-.section-title.text-light {
-  color: var(--color-white);
-}
-
-.section-desc {
-  font-size: 17px;
-  color: var(--color-dark-brown-60);
-}
-
-.section-desc.text-muted {
-  color: rgba(255, 255, 255, 0.7);
-}
-
-@media (max-width: 768px) {
-  .section-title {
-    font-size: 28px;
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
   }
+
+  body {
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--text);
+    background-color: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+    display: block;
+  }
+
+  #root {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+    transition: var(--transition);
+  }
+
+  button {
+    font-family: var(--sans);
+    cursor: pointer;
+    border: none;
+    background: none;
+    transition: var(--transition);
+  }
+
+  input, textarea {
+    font-family: var(--sans);
+  }
+}
+
+@layer components {
+  /* Common Section Layout Rules */
+  .section-header {
+    text-align: center;
+    max-width: 680px;
+    margin: 0 auto 48px;
+  }
+
+  .section-header.align-left {
+    text-align: left;
+    margin-left: 0;
+  }
+
+  .section-subtitle {
+    display: inline-block;
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--color-burnt-orange);
+    margin-bottom: 12px;
+  }
+
+  .section-title {
+    font-size: 38px;
+    font-weight: 800;
+    line-height: 1.2;
+    color: var(--color-dark-brown);
+    margin-bottom: 16px;
+  }
+
+  .section-title.text-light {
+    color: var(--color-white);
+  }
+
   .section-desc {
-    font-size: 15px;
+    font-size: 17px;
+    color: var(--color-dark-brown-60);
+  }
+
+  .section-desc.text-muted {
+    color: rgba(255, 255, 255, 0.7);
+  }
+
+  @media (max-width: 768px) {
+    .section-title {
+      font-size: 28px;
+    }
+    .section-desc {
+      font-size: 15px;
+    }
   }
 }
