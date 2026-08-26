@@ -62,7 +62,7 @@ export default function MenuSection({
       {/* Menu Filters / Search Container */}
       <div className="menu-controls-wrapper">
         <div className="menu-controls">
-          {/* Categories Tab Bar */}
+          {/* Categories Tab Bar (Desktop View) */}
           <div className="categories-tab-bar">
             {CATEGORIES.map((category) => (
               <button
@@ -75,6 +75,28 @@ export default function MenuSection({
                 <span>{category.name}</span>
               </button>
             ))}
+          </div>
+
+          {/* Categories Dropdown (Mobile View) */}
+          <div className="categories-dropdown-container">
+            <label htmlFor="category-select" className="sr-only">Select Category</label>
+            <select
+              id="category-select"
+              className="categories-select"
+              value={activeCategory}
+              onChange={(e) => setActiveCategory(e.target.value as CategoryId)}
+            >
+              {CATEGORIES.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+            <div className="select-arrow">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+              </svg>
+            </div>
           </div>
 
           {/* Search Box */}

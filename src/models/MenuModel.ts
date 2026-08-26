@@ -3,12 +3,12 @@ export interface Product {
   name: string;
   price: number;
   description: string;
-  category: 'ramyeon' | 'toppings' | 'drinks';
+  category: 'ramyeon' | 'toppings' | 'drinks' | 'silog' | 'combos';
   image: string;
   isPopular?: boolean;
 }
 
-export type CategoryId = 'all' | 'ramyeon' | 'toppings' | 'drinks';
+export type CategoryId = 'all' | 'ramyeon' | 'toppings' | 'drinks' | 'silog' | 'combos';
 
 export interface Category {
   id: CategoryId;
