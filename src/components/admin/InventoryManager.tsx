@@ -1,23 +1,23 @@
-import { useState, useMemo } from 'react';
-import type { InventoryItem, AuditLogEntry, StockMovement } from '../../models/MenuModel';
+import React, { useState, useMemo } from 'react';
+import type { InventoryItem, AuditLogEntry, StockMovement, Product } from '../../models/MenuModel';
 
 interface InventoryManagerProps {
   inventory: InventoryItem[];
-  addInventoryItem: (item: Omit<InventoryItem, 'id' | 'lastAudited'>) => void;
+  addInventoryItem: (item: Omit<InventoryItem, 'id' | 'lastAudited'> & { id?: string }) => void;
   logAuditRecord: (entry: Omit<AuditLogEntry, 'id' | 'itemName' | 'recordedCount' | 'discrepancy'>) => void;
   resetInventory: () => void;
   stockMovements: StockMovement[];
   logStockMovement: (entry: Omit<StockMovement, 'id' | 'itemName'>) => void;
   resetStockMovements: () => void;
+  products: Product[];
 }
 
 export default function InventoryManager({
   inventory,
-  addInventoryItem,
   logAuditRecord,
   stockMovements,
   logStockMovement,
-  resetStockMovements
+  products
 }: InventoryManagerProps) {
   // Navigation Tabs for Sub-views
   const [activeTab, setActiveTab] = useState<'stock' | 'movements'>('stock');
@@ -26,45 +26,62 @@ export default function InventoryManager({
   const [inventorySearch, setInventorySearch] = useState('');
   const [inventoryCategory, setInventoryCategory] = useState<string>('all');
 
-  // Modal Dialog states for Inventory Audit
+  // Modal Dialog states for Inventory Adjustment
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
-  const [selectedAuditItem, setSelectedAuditItem] = useState<InventoryItem | null>(null);
+  const [selectedAuditItem, setSelectedAuditItem] = useState<{
+    id: string;
+    name: string;
+    currentStock: number;
+    unit: string;
+  } | null>(null);
 
-  // Form states for Inventory Audit entry
+  // Form states for Stock Adjust
   const [auditPhysicalCount, setAuditPhysicalCount] = useState(0);
-  const [auditAuditorName, setAuditAuditorName] = useState('');
+  const [auditAuditorName, setAuditAuditorName] = useState('Admin');
   const [auditNotes, setAuditNotes] = useState('');
-
-  // Modal Dialog states for Add Inventory Item
-  const [isAddInvModalOpen, setIsAddInvModalOpen] = useState(false);
-  const [invName, setInvName] = useState('');
-  const [invStock, setInvStock] = useState(10);
-  const [invMin, setInvMin] = useState(5);
-  const [invUnit, setInvUnit] = useState('pcs');
-  const [invCategory, setInvCategory] = useState('toppings');
 
   // Modal Dialog states for Daily Movement entry
   const [isMoveModalOpen, setIsMoveModalOpen] = useState(false);
-  const [moveItemId, setMoveItemId] = useState(inventory[0]?.id || '');
+  const [moveItemId, setMoveItemId] = useState(products[0]?.id || '');
   const [moveDate, setMoveDate] = useState(() => new Date().toISOString().substring(0, 10));
   const [moveDisplayed, setMoveDisplayed] = useState(0);
   const [moveSold, setMoveSold] = useState(0);
 
-  // Filters stock inventory list
-  const filteredInventory = useMemo(() => {
-    return inventory.filter(item => {
-      const matchesCategory = inventoryCategory === 'all' || item.category === inventoryCategory;
-      const matchesSearch = item.name.toLowerCase().includes(inventorySearch.toLowerCase());
-      return matchesCategory && matchesSearch;
-    });
-  }, [inventory, inventoryCategory, inventorySearch]);
+  // Resolves stock levels for all products, filters, and sorts 0-stock to top
+  const resolvedInventory = useMemo(() => {
+    return products
+      .map((product) => {
+        const invItem = inventory.find(i => i.id === product.id || i.name.toLowerCase() === product.name.toLowerCase());
+        return {
+          id: product.id,
+          name: product.name,
+          category: product.category,
+          currentStock: invItem ? invItem.currentStock : 0,
+          minStockLevel: invItem ? invItem.minStockLevel : 5,
+          unit: invItem ? invItem.unit : 'pcs',
+          lastAudited: invItem ? invItem.lastAudited : null
+        };
+      })
+      .filter((item) => {
+        const matchesCategory = inventoryCategory === 'all' || item.category === inventoryCategory;
+        const matchesSearch = item.name.toLowerCase().includes(inventorySearch.toLowerCase());
+        return matchesCategory && matchesSearch;
+      })
+      .sort((a, b) => {
+        // Items with 0 stock always go to the top
+        if (a.currentStock === 0 && b.currentStock > 0) return -1;
+        if (a.currentStock > 0 && b.currentStock === 0) return 1;
+        // Otherwise, sort by stock level ascending
+        return a.currentStock - b.currentStock;
+      });
+  }, [products, inventory, inventoryCategory, inventorySearch]);
 
-  // Handlers for manual audit checks
-  const handleOpenAuditModal = (item: InventoryItem) => {
+  // Handlers for stock adjustments
+  const handleOpenAuditModal = (item: { id: string; name: string; currentStock: number; unit: string }) => {
     setSelectedAuditItem(item);
     setAuditPhysicalCount(item.currentStock);
-    setAuditAuditorName('');
-    setAuditNotes('');
+    setAuditAuditorName('Admin');
+    setAuditNotes('Manual stock adjustment');
     setIsAuditModalOpen(true);
   };
 
@@ -84,35 +101,17 @@ export default function InventoryManager({
       notes: auditNotes
     });
 
-    alert(`Audit entry saved! Stock for "${selectedAuditItem.name}" updated to ${auditPhysicalCount}.`);
+    alert(`Stock level for "${selectedAuditItem.name}" updated to ${auditPhysicalCount} ${selectedAuditItem.unit}.`);
     setIsAuditModalOpen(false);
-  };
-
-  const handleAddInvSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!invName.trim() || invStock < 0 || invMin < 0) {
-      alert('Please fill out all fields with non-negative numbers.');
-      return;
-    }
-    addInventoryItem({
-      name: invName,
-      currentStock: Number(invStock),
-      minStockLevel: Number(invMin),
-      unit: invUnit,
-      category: invCategory
-    });
-    alert(`Inventory item "${invName}" created.`);
-    setInvName('');
-    setIsAddInvModalOpen(false);
   };
 
   // Handlers for daily displayed vs sold movement logs
   const handleOpenMoveModal = () => {
-    if (inventory.length === 0) {
-      alert('Please add inventory items first before logging movements.');
+    if (products.length === 0) {
+      alert('Please add products to your catalog first before logging movements.');
       return;
     }
-    setMoveItemId(inventory[0].id);
+    setMoveItemId(products[0].id);
     setMoveDate(new Date().toISOString().substring(0, 10));
     setMoveDisplayed(0);
     setMoveSold(0);
@@ -134,8 +133,8 @@ export default function InventoryManager({
       soldQty: Number(moveSold)
     });
 
-    const targetItem = inventory.find(item => item.id === moveItemId);
-    alert(`Movement logged! Adjusted "${targetItem?.name}" stock level: +${moveDisplayed} displayed, -${moveSold} sold.`);
+    const targetProduct = products.find(p => p.id === moveItemId);
+    alert(`Movement logged for "${targetProduct?.name}": +${moveDisplayed} displayed, -${moveSold} sold.`);
     setIsMoveModalOpen(false);
   };
 
@@ -242,13 +241,6 @@ export default function InventoryManager({
                     </button>
                   )}
                 </div>
-                <button
-                  type="button"
-                  className="bg-blue-600 hover:bg-slate-900 text-white border-none px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer shadow-md shadow-blue-500/15 hover:shadow-lg transition-all outline-none"
-                  onClick={() => setIsAddInvModalOpen(true)}
-                >
-                  Add Stock Item
-                </button>
               </div>
             </div>
           </div>
@@ -268,12 +260,18 @@ export default function InventoryManager({
                 </tr>
               </thead>
               <tbody>
-                {filteredInventory.length > 0 ? (
-                  filteredInventory.map((item) => {
+                {resolvedInventory.length > 0 ? (
+                  resolvedInventory.map((item) => {
+                    const isOutOfStock = item.currentStock <= 0;
                     const isLow = item.currentStock <= item.minStockLevel;
                     return (
-                      <tr key={item.id} className={`hover:bg-slate-50/50 transition-colors ${isLow ? 'bg-red-50/5' : ''
-                        }`}>
+                      <tr key={item.id} className={`hover:bg-slate-50/50 transition-colors ${
+                        isOutOfStock 
+                          ? 'bg-rose-50/30' 
+                          : isLow 
+                            ? 'bg-amber-50/15' 
+                            : ''
+                      }`}>
                         <td className="px-5 py-4 border-b border-slate-100 align-middle text-sm text-slate-600">
                           <span className="font-mono text-xs text-slate-500">{item.id}</span>
                         </td>
@@ -284,7 +282,7 @@ export default function InventoryManager({
                           <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider">{item.category}</span>
                         </td>
                         <td className="px-5 py-4 border-b border-slate-100 align-middle text-sm text-slate-600">
-                          <strong className={`text-[15px] font-extrabold ${isLow ? 'text-red-600' : 'text-slate-950'}`}>
+                          <strong className={`text-[15px] font-extrabold ${isOutOfStock ? 'text-red-600' : isLow ? 'text-amber-600' : 'text-slate-950'}`}>
                             {item.currentStock} {item.unit}
                           </strong>
                         </td>
@@ -294,10 +292,12 @@ export default function InventoryManager({
                           </span>
                         </td>
                         <td className="px-5 py-4 border-b border-slate-100 align-middle text-sm text-slate-600">
-                          {isLow ? (
-                            <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-red-50 text-red-600 border border-red-100">Low Stock Alert</span>
+                          {isOutOfStock ? (
+                            <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider bg-red-100 text-red-700 border border-red-200">OUT OF STOCK</span>
+                          ) : isLow ? (
+                            <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200">Low Stock Alert</span>
                           ) : (
-                            <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-green-50 text-green-600 border border-green-100">Healthy Stock</span>
+                            <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-green-50 text-green-700 border border-green-200">Healthy Stock</span>
                           )}
                         </td>
                         <td className="px-5 py-4 border-b border-slate-100 align-middle text-sm text-slate-600">
@@ -309,10 +309,10 @@ export default function InventoryManager({
                           <div className="flex gap-2 justify-center">
                             <button
                               type="button"
-                              className="bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white border border-blue-200/50 hover:border-blue-600 px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-all"
+                              className="bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white border border-blue-200/50 hover:border-blue-600 px-3.5 py-1.5 rounded-xl text-xs font-bold cursor-pointer transition-all"
                               onClick={() => handleOpenAuditModal(item)}
                             >
-                              Log Audit
+                              Adjust Stock
                             </button>
                           </div>
                         </td>
@@ -342,13 +342,6 @@ export default function InventoryManager({
               </div>
 
               <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  className="bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white border border-red-500/20 px-4 py-2 rounded-xl font-bold text-xs cursor-pointer transition-all outline-none"
-                  onClick={resetStockMovements}
-                >
-                  Reset Ledger
-                </button>
                 <button
                   type="button"
                   className="bg-blue-600 hover:bg-slate-900 text-white border-none px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer shadow-md shadow-blue-500/15 hover:shadow-lg transition-all outline-none"
@@ -422,12 +415,12 @@ export default function InventoryManager({
         </>
       )}
 
-      {/* Modal: Log Audit */}
+      {/* Modal: Adjust Stock Level */}
       {isAuditModalOpen && selectedAuditItem && (
         <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center z-[2000] p-6 box-border">
-          <div className="bg-white rounded-3xl w-full max-w-[540px] shadow-2xl overflow-hidden font-sans">
+          <div className="bg-white rounded-3xl w-full max-w-[480px] shadow-2xl overflow-hidden font-sans">
             <div className="px-6 py-5 bg-slate-950 text-white flex justify-between items-center">
-              <h3 className="text-base font-extrabold m-0">Log Manual Physical Audit Count</h3>
+              <h3 className="text-base font-extrabold m-0">Adjust Stock: {selectedAuditItem.name}</h3>
               <button
                 type="button"
                 className="text-2xl text-white bg-transparent border-none cursor-pointer opacity-80 hover:opacity-100 outline-none"
@@ -437,180 +430,98 @@ export default function InventoryManager({
               </button>
             </div>
 
-            <form onSubmit={handleAuditSubmit} className="p-6 flex flex-col gap-4">
-              <div className="bg-slate-50 p-4 rounded-xl mb-1">
-                <h4 className="color-slate-950 font-bold text-sm m-0">{selectedAuditItem.name}</h4>
-                <p className="text-xs text-slate-500 mt-1 m-0">
-                  Current System Stock Level: <strong>{selectedAuditItem.currentStock} {selectedAuditItem.unit}</strong>
-                </p>
+            <form onSubmit={handleAuditSubmit} className="p-6 flex flex-col gap-5">
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200/60">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Current Inventory Stock</span>
+                <strong className="text-xl font-extrabold text-slate-900 mt-1 block">
+                  {selectedAuditItem.currentStock} {selectedAuditItem.unit}
+                </strong>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="audit-phys-count" className="text-xs font-bold uppercase tracking-wider text-slate-700">Actual Physical Count ({selectedAuditItem.unit}) *</label>
-                  <input
-                    type="number"
-                    id="audit-phys-count"
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 text-xs font-semibold placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 outline-none transition-all box-border font-sans"
-                    placeholder="Enter physical counted stock"
-                    value={auditPhysicalCount}
-                    onChange={(e) => setAuditPhysicalCount(Number(e.target.value))}
-                    min={0}
-                    required
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="audit-auditor" className="text-xs font-bold uppercase tracking-wider text-slate-700">Auditor Name *</label>
-                  <input
-                    type="text"
-                    id="audit-auditor"
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 text-xs font-semibold placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 outline-none transition-all box-border font-sans"
-                    placeholder="e.g. Maria Clara"
-                    value={auditAuditorName}
-                    onChange={(e) => setAuditAuditorName(e.target.value)}
-                    required
-                  />
+              <div className="flex flex-col gap-2">
+                <label htmlFor="audit-phys-count" className="text-xs font-bold uppercase tracking-wider text-slate-700">New Total Stock Level ({selectedAuditItem.unit}) *</label>
+                <input
+                  type="number"
+                  id="audit-phys-count"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 text-sm font-semibold placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 outline-none transition-all box-border font-sans"
+                  placeholder="Enter new stock count"
+                  value={auditPhysicalCount}
+                  onChange={(e) => setAuditPhysicalCount(Number(e.target.value))}
+                  min={0}
+                  required
+                />
+                
+                {/* Increment helper buttons */}
+                <div className="flex gap-2 mt-1">
+                  <button
+                    type="button"
+                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border-none py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                    onClick={() => setAuditPhysicalCount(prev => prev + 1)}
+                  >
+                    +1
+                  </button>
+                  <button
+                    type="button"
+                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border-none py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                    onClick={() => setAuditPhysicalCount(prev => prev + 5)}
+                  >
+                    +5
+                  </button>
+                  <button
+                    type="button"
+                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border-none py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                    onClick={() => setAuditPhysicalCount(prev => prev + 10)}
+                  >
+                    +10
+                  </button>
+                  <button
+                    type="button"
+                    className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 border-none py-1.5 rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                    onClick={() => setAuditPhysicalCount(prev => prev + 25)}
+                  >
+                    +25
+                  </button>
                 </div>
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label htmlFor="audit-notes" className="text-xs font-bold uppercase tracking-wider text-slate-700">Adjustment Notes / Remarks</label>
-                <textarea
-                  id="audit-notes"
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 text-xs font-semibold placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 outline-none transition-all box-border font-sans resize-y"
-                  placeholder="Explain discrepancies or count logs..."
-                  value={auditNotes}
-                  onChange={(e) => setAuditNotes(e.target.value)}
-                  rows={3}
-                ></textarea>
+                <label htmlFor="audit-auditor" className="text-xs font-bold uppercase tracking-wider text-slate-700">Auditor Name *</label>
+                <input
+                  type="text"
+                  id="audit-auditor"
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-955 text-xs font-semibold placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 outline-none transition-all box-border font-sans"
+                  placeholder="Enter auditor name"
+                  value={auditAuditorName}
+                  onChange={(e) => setAuditAuditorName(e.target.value)}
+                  required
+                />
               </div>
 
-              <div className="flex justify-end gap-3 mt-4">
+              <div className="flex flex-col gap-1.5">
+                <label htmlFor="audit-notes" className="text-xs font-bold uppercase tracking-wider text-slate-700">Adjustment Notes</label>
+                <input
+                  type="text"
+                  id="audit-notes"
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-955 text-xs font-semibold placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 outline-none transition-all box-border font-sans"
+                  placeholder="e.g. Restock shipment / physical correction"
+                  value={auditNotes}
+                  onChange={(e) => setAuditNotes(e.target.value)}
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 mt-3">
                 <button
                   type="button"
-                  className="bg-slate-100 hover:bg-slate-200 text-slate-900 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer border-none transition-all"
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-900 px-5 py-2.5 rounded-xl font-bold text-xs cursor-pointer border-none transition-all"
                   onClick={() => setIsAuditModalOpen(false)}
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="bg-blue-600 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer border-none shadow-md shadow-blue-500/15 hover:shadow-lg transition-all"
+                  className="bg-blue-600 hover:bg-slate-900 text-white px-5 py-2.5 rounded-xl font-bold text-xs cursor-pointer border-none shadow-md shadow-blue-500/15 hover:shadow-lg transition-all"
                 >
-                  Save Audit Adjustment
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Add Inventory Item */}
-      {isAddInvModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center z-[2000] p-6 box-border">
-          <div className="bg-white rounded-3xl w-full max-w-[540px] shadow-2xl overflow-hidden font-sans">
-            <div className="px-6 py-5 bg-slate-950 text-white flex justify-between items-center">
-              <h3 className="text-base font-extrabold m-0">Add New Inventory Stock Item</h3>
-              <button
-                type="button"
-                className="text-2xl text-white bg-transparent border-none cursor-pointer opacity-80 hover:opacity-100 outline-none"
-                onClick={() => setIsAddInvModalOpen(false)}
-              >
-                &times;
-              </button>
-            </div>
-
-            <form onSubmit={handleAddInvSubmit} className="p-6 flex flex-col gap-4">
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="inv-name" className="text-xs font-bold uppercase tracking-wider text-slate-700">Item Name *</label>
-                <input
-                  type="text"
-                  id="inv-name"
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 text-xs font-semibold placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 outline-none transition-all box-border font-sans"
-                  placeholder="e.g. Carbonara Powder Bags"
-                  value={invName}
-                  onChange={(e) => setInvName(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="inv-stock" className="text-xs font-bold uppercase tracking-wider text-slate-700">Initial Stock Level *</label>
-                  <input
-                    type="number"
-                    id="inv-stock"
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-955 text-xs font-semibold placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 outline-none transition-all box-border font-sans"
-                    value={invStock}
-                    onChange={(e) => setInvStock(Number(e.target.value))}
-                    min={0}
-                    required
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="inv-min" className="text-xs font-bold uppercase tracking-wider text-slate-700">Safety Stock (Min Level) *</label>
-                  <input
-                    type="number"
-                    id="inv-min"
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-955 text-xs font-semibold placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 outline-none transition-all box-border font-sans"
-                    value={invMin}
-                    onChange={(e) => setInvMin(Number(e.target.value))}
-                    min={0}
-                    required
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="inv-unit" className="text-xs font-bold uppercase tracking-wider text-slate-700">Unit Type *</label>
-                  <select
-                    id="inv-unit"
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-955 text-xs font-semibold placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 outline-none transition-all box-border font-sans"
-                    value={invUnit}
-                    onChange={(e) => setInvUnit(e.target.value)}
-                  >
-                    <option value="pcs">pcs (individual)</option>
-                    <option value="packs">packs (bags)</option>
-                    <option value="blocks">blocks (cheese)</option>
-                    <option value="kg">kg (weight)</option>
-                    <option value="cans">cans (beverages/spam)</option>
-                    <option value="bottles">bottles (soju)</option>
-                  </select>
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="inv-cat" className="text-xs font-bold uppercase tracking-wider text-slate-700">Category *</label>
-                  <select
-                    id="inv-cat"
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-955 text-xs font-semibold placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 outline-none transition-all box-border font-sans"
-                    value={invCategory}
-                    onChange={(e) => setInvCategory(e.target.value)}
-                  >
-                    <option value="ramyeon">Korean Ramyeon</option>
-                    <option value="toppings">Ramyeon Toppings</option>
-                    <option value="drinks">Drinks & Sides</option>
-                    <option value="silog">All-Day Silog</option>
-                    <option value="combos">Combo Meals</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-3 mt-4">
-                <button
-                  type="button"
-                  className="bg-slate-100 hover:bg-slate-200 text-slate-900 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer border-none transition-all"
-                  onClick={() => setIsAddInvModalOpen(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="bg-blue-600 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer border-none shadow-md shadow-blue-500/15 hover:shadow-lg transition-all"
-                >
-                  Add Item to Stock
+                  Update Stock
                 </button>
               </div>
             </form>
@@ -635,19 +546,24 @@ export default function InventoryManager({
 
             <form onSubmit={handleMoveSubmit} className="p-6 flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
-                <label htmlFor="move-item" className="text-xs font-bold uppercase tracking-wider text-slate-700">Select Inventory Item *</label>
+                <label htmlFor="move-item" className="text-xs font-bold uppercase tracking-wider text-slate-700 font-sans">Select Inventory Item *</label>
                 <select
                   id="move-item"
-                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-955 text-xs font-semibold placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 outline-none transition-all box-border font-sans"
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-955 text-xs font-semibold placeholder-slate-400 focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 outline-none transition-all box-border font-sans cursor-pointer"
                   value={moveItemId}
                   onChange={(e) => setMoveItemId(e.target.value)}
                   required
                 >
-                  {inventory.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.name} ({item.currentStock} {item.unit} in stock)
-                    </option>
-                  ))}
+                  {products.map(p => {
+                    const invItem = inventory.find(i => i.id === p.id);
+                    const stock = invItem ? invItem.currentStock : 0;
+                    const unit = invItem ? invItem.unit : 'pcs';
+                    return (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({stock} {unit} in stock)
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 

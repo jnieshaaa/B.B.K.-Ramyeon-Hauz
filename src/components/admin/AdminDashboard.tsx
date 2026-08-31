@@ -42,6 +42,13 @@ interface AdminDashboardProps {
   addCategory: (category: Omit<Category, 'id'>) => Promise<Category>;
   editCategory: (category: Category) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
+
+  // Global toast prop
+  showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+
+  // Maintenance props
+  maintenanceMode: { active: boolean; message: string };
+  updateMaintenanceMode: (active: boolean, message?: string) => Promise<void>;
 }
 
 export default function AdminDashboard({
@@ -66,7 +73,10 @@ export default function AdminDashboard({
   categories,
   addCategory,
   editCategory,
-  deleteCategory
+  deleteCategory,
+  showToast,
+  maintenanceMode,
+  updateMaintenanceMode
 }: AdminDashboardProps) {
   // Authentication State
   const [username, setUsername] = useState('');
@@ -74,6 +84,7 @@ export default function AdminDashboard({
   const [isLoggedIn, setIsLoggedIn] = useState(() => {
     return sessionStorage.getItem('bbk_admin_auth') === 'true';
   });
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [loginError, setLoginError] = useState('');
 
   // Mobile sidebar visibility state
@@ -109,28 +120,39 @@ export default function AdminDashboard({
         // Hash the password input with SHA-256
         const hashedInputPassword = await sha256(password);
 
-        // Fetch user from DB, join with roles
-        const { data, error } = await supabase
+        // Fetch user from DB
+        const { data: userData, error: userError } = await supabase
           .from('users')
-          .select('password_hash, roles(role_hash)')
-          .eq('email', username)
-          .single();
+          .select('password_hash, role_id')
+          .eq('email', username.trim().toLowerCase())
+          .maybeSingle();
 
-        if (error || !data) {
+        if (userError || !userData) {
           setLoginError('Invalid administrative username or password.');
           return;
         }
 
         // Check password hash
-        if (data.password_hash !== hashedInputPassword) {
+        if (userData.password_hash !== hashedInputPassword) {
           setLoginError('Invalid administrative username or password.');
+          return;
+        }
+
+        // Fetch user's role
+        const { data: roleData, error: roleError } = await supabase
+          .from('roles')
+          .select('role_hash')
+          .eq('id', userData.role_id)
+          .maybeSingle();
+
+        if (roleError || !roleData) {
+          setLoginError('Unauthorized access: User role could not be verified.');
           return;
         }
 
         // Verify role is 'admin' (check role_hash)
         const adminRoleHash = await sha256('admin');
-        const rolesData = data.roles as any;
-        if (!rolesData || rolesData.role_hash !== adminRoleHash) {
+        if (roleData.role_hash !== adminRoleHash) {
           setLoginError('Unauthorized access: User role does not possess administrative privileges.');
           return;
         }
@@ -138,6 +160,7 @@ export default function AdminDashboard({
         sessionStorage.setItem('bbk_admin_auth', 'true');
         setIsLoggedIn(true);
         setLoginError('');
+        showToast('Successfully logged in as Administrator!', 'success');
       } catch (err) {
         console.error('Database login error, falling back to local verification:', err);
         localVerify();
@@ -151,17 +174,24 @@ export default function AdminDashboard({
         sessionStorage.setItem('bbk_admin_auth', 'true');
         setIsLoggedIn(true);
         setLoginError('');
+        showToast('Successfully logged in as Administrator!', 'success');
       } else {
         setLoginError('Invalid administrative username or password.');
       }
     }
   };
 
-  const handleLogout = () => {
+  const handleLogoutClick = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  const confirmLogout = () => {
     sessionStorage.removeItem('bbk_admin_auth');
     setIsLoggedIn(false);
     setUsername('');
     setPassword('');
+    showToast('Logged out of Admin Panel.', 'info');
+    setShowLogoutConfirm(false);
   };
 
   // Render Login wall
@@ -180,122 +210,156 @@ export default function AdminDashboard({
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-white font-sans text-slate-800">
-      {/* Sidebar Layout component */}
-      <AdminSidebar
-        currentPage={currentPage}
-        setCurrentPage={setCurrentPage}
-        pendingInquiriesCount={stats.pendingInquiries}
-        lowStockCount={stats.lowStockCount}
-        onLogout={handleLogout}
-        isOpen={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
-      />
+    <>
+      <div className="flex h-screen w-screen overflow-hidden bg-white font-sans text-slate-800">
+        {/* Sidebar Layout component */}
+        <AdminSidebar
+          currentPage={currentPage}
+          setCurrentPage={setCurrentPage}
+          pendingInquiriesCount={stats.pendingInquiries}
+          lowStockCount={stats.lowStockCount}
+          onLogout={handleLogoutClick}
+          isOpen={isSidebarOpen}
+          onClose={() => setIsSidebarOpen(false)}
+        />
 
-      {/* Main Content Pane */}
-      <div className="flex-1 flex flex-col h-full overflow-y-auto w-full">
-        <header className="px-4 py-4 md:px-8 md:py-5 border-b border-slate-200 bg-white flex justify-between items-center shrink-0 gap-4">
-          <div className="flex items-center min-w-0">
-            {/* Hamburger Button for mobile */}
-            <button
-              type="button"
-              className="md:hidden mr-3 p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-xl bg-transparent border-none outline-none cursor-pointer shrink-0 transition-colors"
-              onClick={() => setIsSidebarOpen(true)}
-              aria-label="Open menu"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </button>
-            <div className="min-w-0">
-              <h2 className="text-base md:text-xl font-extrabold text-slate-900 m-0 truncate">
-                {currentPage === 'overview' && 'Portal Performance Overview'}
-                {currentPage === 'products' && 'Menu Catalog Manager'}
-                {currentPage === 'bookings' && 'Customer Reservations & Orders'}
-                {currentPage === 'inventory' && 'Inventory Stock & Auditing'}
-                {currentPage === 'audit-logs' && 'Historical Physical Audit Logs'}
-                {currentPage === 'settings' && 'Store Information Settings'}
-              </h2>
-              <p className="text-[10px] md:text-xs text-slate-400 font-semibold mt-1 m-0 truncate">
-                {currentPage === 'overview' && 'Real-time sales indicators, booking feeds, and inventory thresholds.'}
-                {currentPage === 'products' && 'Add, edit, or delete items from the customer catalog.'}
-                {currentPage === 'bookings' && 'Track dine-in bookings, details, and order specifications.'}
-                {currentPage === 'inventory' && 'Conduct audits, log physical counts, and review safety levels.'}
-                {currentPage === 'audit-logs' && 'Audit trail records of physical inventory adjustments.'}
-                {currentPage === 'settings' && 'Modify contact numbers, email address, locations, and landmarks.'}
-              </p>
+        {/* Main Content Pane */}
+        <div className="flex-1 flex flex-col h-full overflow-y-auto w-full">
+          <header className="px-4 py-4 md:px-8 md:py-5 border-b border-slate-200 bg-white flex justify-between items-center shrink-0 gap-4">
+            <div className="flex items-center min-w-0">
+              {/* Hamburger Button for mobile */}
+              <button
+                type="button"
+                className="md:hidden mr-3 p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-xl bg-transparent border-none outline-none cursor-pointer shrink-0 transition-colors"
+                onClick={() => setIsSidebarOpen(true)}
+                aria-label="Open menu"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              </button>
+              <h1 className="text-xl md:text-2xl font-extrabold text-slate-800 font-sans tracking-tight truncate">
+                {currentPage === 'overview' && 'Dashboard Overview'}
+                {currentPage === 'products' && 'Product Catalog'}
+                {currentPage === 'bookings' && 'Reservations & Inquiries'}
+                {currentPage === 'inventory' && 'Inventory Ledger'}
+                {currentPage === 'audit-logs' && 'Physical Audit History'}
+                {currentPage === 'settings' && 'Contact & Info Settings'}
+              </h1>
             </div>
+            
+            {/* Quick stats indicator */}
+            <div className="hidden sm:flex items-center gap-4 text-xs font-semibold text-slate-500">
+              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-100">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                Database Active
+              </span>
+            </div>
+          </header>
+
+          <div className="flex-1 p-4 md:p-8 bg-slate-50 overflow-y-auto">
+            {currentPage === 'overview' && (
+              <DashboardOverview
+                stats={stats}
+                inventory={inventory}
+                inquiries={inquiries}
+                onViewInventory={() => setCurrentPage('inventory')}
+                onViewBookings={() => setCurrentPage('bookings')}
+              />
+            )}
+
+            {currentPage === 'products' && (
+              <CatalogManager
+                products={products}
+                addProduct={addProduct}
+                editProduct={editProduct}
+                deleteProduct={deleteProduct}
+                resetProducts={resetProducts}
+                categories={categories}
+                addCategory={addCategory}
+                editCategory={editCategory}
+                deleteCategory={deleteCategory}
+              />
+            )}
+
+            {currentPage === 'bookings' && (
+              <BookingsManager
+                inquiries={inquiries}
+                resolveInquiry={resolveInquiry}
+                deleteInquiry={deleteInquiry}
+              />
+            )}
+
+            {currentPage === 'inventory' && (
+              <InventoryManager
+                inventory={inventory}
+                addInventoryItem={addInventoryItem}
+                logAuditRecord={logAuditRecord}
+                resetInventory={resetInventory}
+                stockMovements={stockMovements}
+                logStockMovement={logStockMovement}
+                resetStockMovements={resetStockMovements}
+                products={products}
+              />
+            )}
+
+            {currentPage === 'audit-logs' && (
+              <AuditLogsManager
+                auditLogs={auditLogs}
+              />
+            )}
+
+            {currentPage === 'settings' && (
+              <SettingsManager
+                contactInfo={contactInfo}
+                updateContactInfo={updateContactInfo}
+                maintenanceMode={maintenanceMode}
+                updateMaintenanceMode={updateMaintenanceMode}
+              />
+            )}
           </div>
-          <div className="shrink-0">
-            <button
-              type="button"
-              className="bg-transparent hover:bg-[#D65113] hover:text-white text-[#D65113] border border-[#D65113] px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-xs font-bold cursor-pointer transition-all outline-none"
-              onClick={() => { window.location.search = ''; }}
-            >
-              View Site
-            </button>
-          </div>
-        </header>
-
-        <div className="p-4 md:p-8 box-border">
-          {currentPage === 'overview' && (
-            <DashboardOverview
-              stats={stats}
-              inventory={inventory}
-              inquiries={inquiries}
-              onViewInventory={() => setCurrentPage('inventory')}
-              onViewBookings={() => setCurrentPage('bookings')}
-            />
-          )}
-
-          {currentPage === 'products' && (
-            <CatalogManager
-              products={products}
-              addProduct={addProduct}
-              editProduct={editProduct}
-              deleteProduct={deleteProduct}
-              resetProducts={resetProducts}
-              categories={categories}
-              addCategory={addCategory}
-              editCategory={editCategory}
-              deleteCategory={deleteCategory}
-            />
-          )}
-
-          {currentPage === 'bookings' && (
-            <BookingsManager
-              inquiries={inquiries}
-              resolveInquiry={resolveInquiry}
-              deleteInquiry={deleteInquiry}
-            />
-          )}
-
-          {currentPage === 'inventory' && (
-            <InventoryManager
-              inventory={inventory}
-              addInventoryItem={addInventoryItem}
-              logAuditRecord={logAuditRecord}
-              resetInventory={resetInventory}
-              stockMovements={stockMovements}
-              logStockMovement={logStockMovement}
-              resetStockMovements={resetStockMovements}
-            />
-          )}
-
-          {currentPage === 'audit-logs' && (
-            <AuditLogsManager
-              auditLogs={auditLogs}
-            />
-          )}
-
-          {currentPage === 'settings' && (
-            <SettingsManager
-              contactInfo={contactInfo}
-              updateContactInfo={updateContactInfo}
-            />
-          )}
         </div>
       </div>
-    </div>
+
+      {showLogoutConfirm && (
+        <div 
+          className="fixed inset-0 z-[100] bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn"
+          onClick={() => setShowLogoutConfirm(false)}
+        >
+          <div 
+            className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 flex flex-col items-center text-center animate-slideIn"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center text-rose-500 mb-4 shrink-0">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+            </div>
+            
+            <h3 className="text-lg font-bold text-slate-800 mb-1 font-sans">Confirm Logout</h3>
+            <p className="text-sm text-slate-500 mb-6 font-sans leading-relaxed">
+              Are you sure you want to log out of the B.B.K. admin panel?
+            </p>
+
+            <div className="flex gap-3 w-full">
+              <button 
+                type="button"
+                className="flex-1 px-4 py-3 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 active:scale-95 transition-all font-sans cursor-pointer bg-transparent"
+                onClick={() => setShowLogoutConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button 
+                type="button"
+                className="flex-1 px-4 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-sm font-semibold shadow-lg shadow-rose-600/10 active:scale-95 transition-all font-sans cursor-pointer"
+                onClick={confirmLogout}
+              >
+                Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

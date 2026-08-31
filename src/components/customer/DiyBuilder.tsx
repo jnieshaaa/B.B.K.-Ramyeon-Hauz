@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Product, DIYSelection, ContactInfo } from '../../models/MenuModel';
+import type { Product, DIYSelection, ContactInfo, InventoryItem } from '../../models/MenuModel';
 import AuthModal from './AuthModal';
 
 interface DiyBuilderProps {
@@ -14,6 +14,7 @@ interface DiyBuilderProps {
   clientUser: { email: string; name?: string; phone?: string } | null;
   setClientUser: (user: { email: string; name?: string; phone?: string } | null) => void;
   contactInfo: ContactInfo;
+  inventory: InventoryItem[];
 }
 
 export default function DiyBuilder({
@@ -27,7 +28,8 @@ export default function DiyBuilder({
   diyTotal,
   clientUser,
   setClientUser,
-  contactInfo
+  contactInfo,
+  inventory
 }: DiyBuilderProps) {
   // Filter products dynamically from database state so that admin modifications show up here
   const ramyeons = products.filter(p => p.category === 'ramyeon');
@@ -125,33 +127,57 @@ export default function DiyBuilder({
             </div>
             <p className="text-slate-500 text-xs font-semibold m-0">Select exactly one premium Korean instant noodle base.</p>
             <div className="flex flex-col gap-3.5">
-              {ramyeons.map(p => (
-                <div 
-                  key={p.id} 
-                  className={`flex items-center gap-4 border rounded-2xl p-4 cursor-pointer hover:border-[#D65113] hover:bg-slate-50/20 transition-all ${
-                    diySelection.ramyeon?.id === p.id 
-                      ? 'border-2 border-[#D65113] bg-[#FAF1D6]/20' 
-                      : 'border-[#5B240B]/10'
-                  }`}
-                  onClick={() => setDiyRamyeon(diySelection.ramyeon?.id === p.id ? null : p)}
-                >
-                  <img src={p.image} alt={p.name} className="w-14 h-14 rounded-xl object-cover border border-[#5B240B]/10" />
-                  <div className="flex flex-col grow">
-                    <h4 className="text-sm font-extrabold text-[#5B240B] m-0">{p.name}</h4>
-                    <p className="text-[11px] text-slate-500 line-clamp-2 m-0 mt-1 leading-relaxed">{p.description}</p>
-                  </div>
-                  <div className="flex items-center gap-4 ml-auto">
-                    <span className="text-sm font-black text-[#D65113]">₱{p.price}</span>
-                    <div className={`w-5 h-5 rounded-full border-2 border-slate-300 flex items-center justify-center ${
-                      diySelection.ramyeon?.id === p.id ? 'border-[#D65113] bg-[#D65113]' : ''
-                    }`}>
-                      {diySelection.ramyeon?.id === p.id && (
-                        <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
+              {ramyeons.map(p => {
+                const invItem = inventory?.find(i => i.id === p.id);
+                const stock = invItem ? invItem.currentStock : 0;
+                const isOutOfStock = stock <= 0;
+                
+                return (
+                  <div 
+                    key={p.id} 
+                    className={`flex items-center gap-4 border rounded-2xl p-4 transition-all ${
+                      isOutOfStock 
+                        ? 'border-slate-200 bg-slate-50/50 opacity-60 cursor-not-allowed'
+                        : diySelection.ramyeon?.id === p.id 
+                          ? 'border-2 border-[#D65113] bg-[#FAF1D6]/20 cursor-pointer' 
+                          : 'border-[#5B240B]/10 cursor-pointer hover:border-[#D65113] hover:bg-slate-50/20'
+                    }`}
+                    onClick={() => !isOutOfStock && setDiyRamyeon(diySelection.ramyeon?.id === p.id ? null : p)}
+                  >
+                    <div className="relative">
+                      <img src={p.image} alt={p.name} className="w-14 h-14 rounded-xl object-cover border border-[#5B240B]/10 shrink-0" />
+                      {isOutOfStock && (
+                        <div className="absolute inset-0 bg-slate-950/40 rounded-xl flex items-center justify-center">
+                          <span className="text-[7px] text-white font-black uppercase tracking-wider bg-red-600 px-1 py-0.5 rounded">OUT</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col grow">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-extrabold text-[#5B240B] m-0">{p.name}</h4>
+                        {isOutOfStock ? (
+                          <span className="text-[9px] font-black bg-red-50 text-red-600 border border-red-100 px-1.5 py-0.5 rounded">Out of Stock</span>
+                        ) : (
+                          <span className="text-[9px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100 px-1.5 py-0.5 rounded">{stock} left</span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 line-clamp-2 m-0 mt-1 leading-relaxed">{p.description}</p>
+                    </div>
+                    <div className="flex items-center gap-4 ml-auto">
+                      <span className="text-sm font-black text-[#D65113]">₱{p.price}</span>
+                      {!isOutOfStock && (
+                        <div className={`w-5 h-5 rounded-full border-2 border-slate-300 flex items-center justify-center ${
+                          diySelection.ramyeon?.id === p.id ? 'border-[#D65113] bg-[#D65113]' : ''
+                        }`}>
+                          {diySelection.ramyeon?.id === p.id && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -167,36 +193,62 @@ export default function DiyBuilder({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {toppings.map(p => {
                 const qty = getToppingQuantity(p.id);
+                const invItem = inventory?.find(i => i.id === p.id);
+                const stock = invItem ? invItem.currentStock : 0;
+                const isOutOfStock = stock <= 0;
+                
                 return (
                   <div 
                     key={p.id} 
-                    className={`flex items-center gap-4 border rounded-2xl p-4 hover:border-[#D65113] transition-all ${
-                      qty > 0 ? 'border-2 border-[#D65113] bg-[#FAF1D6]/5' : 'border-[#5B240B]/10'
+                    className={`flex items-center gap-4 border rounded-2xl p-4 transition-all ${
+                      isOutOfStock 
+                        ? 'border-slate-200 bg-slate-50/50 opacity-60' 
+                        : qty > 0 
+                          ? 'border-2 border-[#D65113] bg-[#FAF1D6]/5' 
+                          : 'border-[#5B240B]/10 hover:border-[#D65113]'
                     }`}
                   >
-                    <img src={p.image} alt={p.name} className="w-14 h-14 rounded-xl object-cover border border-[#5B240B]/10" />
-                    <div className="flex flex-col">
+                    <div className="relative">
+                      <img src={p.image} alt={p.name} className="w-14 h-14 rounded-xl object-cover border border-[#5B240B]/10 shrink-0" />
+                      {isOutOfStock && (
+                        <div className="absolute inset-0 bg-slate-950/40 rounded-xl flex items-center justify-center">
+                          <span className="text-[7px] text-white font-black uppercase tracking-wider bg-red-600 px-1 py-0.5 rounded">OUT</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col grow">
                       <h4 className="text-xs font-extrabold text-[#5B240B] m-0">{p.name}</h4>
-                      <p className="text-[11px] text-[#D65113] font-black m-0 mt-1">₱{p.price}</p>
+                      <div className="flex items-center gap-1.5 mt-1.5">
+                        <span className="text-[11px] text-[#D65113] font-black">₱{p.price}</span>
+                        <span className="text-[9px] text-slate-300">•</span>
+                        {isOutOfStock ? (
+                          <span className="text-[9px] font-black text-red-600 uppercase">Out of Stock</span>
+                        ) : (
+                          <span className="text-[9px] font-bold text-emerald-600">{stock} left</span>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 ml-auto border border-[#5B240B]/10 rounded-lg p-1 bg-slate-50">
-                      <button 
-                        type="button" 
-                        className="w-6 h-6 rounded bg-white hover:bg-slate-200 border-none text-[#5B240B] font-extrabold text-sm flex items-center justify-center cursor-pointer transition-colors outline-none disabled:opacity-35 disabled:cursor-not-allowed"
-                        onClick={() => removeTopping(p)}
-                        disabled={qty === 0}
-                      >
-                        &minus;
-                      </button>
-                      <span className="text-xs font-black text-[#5B240B] min-w-[14px] text-center">{qty}</span>
-                      <button 
-                        type="button" 
-                        className="w-6 h-6 rounded bg-white hover:bg-slate-200 border-none text-[#5B240B] font-extrabold text-sm flex items-center justify-center cursor-pointer transition-colors outline-none"
-                        onClick={() => addTopping(p)}
-                      >
-                        +
-                      </button>
-                    </div>
+                    {!isOutOfStock && (
+                      <div className="flex items-center gap-2 ml-auto border border-[#5B240B]/10 rounded-lg p-1 bg-slate-50">
+                        <button 
+                          type="button" 
+                          className="w-6 h-6 rounded bg-white hover:bg-slate-200 border-none text-[#5B240B] font-extrabold text-sm flex items-center justify-center cursor-pointer transition-colors outline-none disabled:opacity-35 disabled:cursor-not-allowed"
+                          onClick={() => removeTopping(p)}
+                          disabled={qty === 0}
+                        >
+                          &minus;
+                        </button>
+                        <span className="text-xs font-black text-[#5B240B] min-w-[14px] text-center">{qty}</span>
+                        <button 
+                          type="button" 
+                          className="w-6 h-6 rounded bg-white hover:bg-slate-200 border-none text-[#5B240B] font-extrabold text-sm flex items-center justify-center cursor-pointer transition-colors outline-none disabled:opacity-35 disabled:cursor-not-allowed"
+                          onClick={() => addTopping(p)}
+                          disabled={qty >= stock}
+                        >
+                          +
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -212,34 +264,58 @@ export default function DiyBuilder({
               <h3 className="text-base font-extrabold text-[#5B240B] m-0">Select a Chilled Korean Drink</h3>
             </div>
             <p className="text-slate-500 text-xs font-semibold m-0">Cool down the heat with a traditional Korean soda or milk drink (optional).</p>
-            <div className="flex flex-col gap-3.5">
-              {drinks.map(p => (
-                <div 
-                  key={p.id} 
-                  className={`flex items-center gap-4 border rounded-2xl p-4 cursor-pointer hover:border-[#D65113] hover:bg-slate-50/20 transition-all ${
-                    diySelection.drink?.id === p.id 
-                      ? 'border-2 border-[#D65113] bg-[#FAF1D6]/20' 
-                      : 'border-[#5B240B]/10'
-                  }`}
-                  onClick={() => setDiyDrink(diySelection.drink?.id === p.id ? null : p)}
-                >
-                  <img src={p.image} alt={p.name} className="w-14 h-14 rounded-xl object-cover border border-[#5B240B]/10" />
-                  <div className="flex flex-col grow">
-                    <h4 className="text-sm font-extrabold text-[#5B240B] m-0">{p.name}</h4>
-                    <p className="text-[11px] text-slate-500 line-clamp-2 m-0 mt-1 leading-relaxed">{p.description}</p>
-                  </div>
-                  <div className="flex items-center gap-4 ml-auto">
-                    <span className="text-sm font-black text-[#D65113]">₱{p.price}</span>
-                    <div className={`w-5 h-5 rounded-full border-2 border-slate-300 flex items-center justify-center ${
-                      diySelection.drink?.id === p.id ? 'border-[#D65113] bg-[#D65113]' : ''
-                    }`}>
-                      {diySelection.drink?.id === p.id && (
-                        <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
+             <div className="flex flex-col gap-3.5">
+              {drinks.map(p => {
+                const invItem = inventory?.find(i => i.id === p.id);
+                const stock = invItem ? invItem.currentStock : 0;
+                const isOutOfStock = stock <= 0;
+                
+                return (
+                  <div 
+                    key={p.id} 
+                    className={`flex items-center gap-4 border rounded-2xl p-4 transition-all ${
+                      isOutOfStock 
+                        ? 'border-slate-200 bg-slate-50/50 opacity-60 cursor-not-allowed'
+                        : diySelection.drink?.id === p.id 
+                          ? 'border-2 border-[#D65113] bg-[#FAF1D6]/20 cursor-pointer' 
+                          : 'border-[#5B240B]/10 cursor-pointer hover:border-[#D65113] hover:bg-slate-50/20'
+                    }`}
+                    onClick={() => !isOutOfStock && setDiyDrink(diySelection.drink?.id === p.id ? null : p)}
+                  >
+                    <div className="relative">
+                      <img src={p.image} alt={p.name} className="w-14 h-14 rounded-xl object-cover border border-[#5B240B]/10 shrink-0" />
+                      {isOutOfStock && (
+                        <div className="absolute inset-0 bg-slate-950/40 rounded-xl flex items-center justify-center">
+                          <span className="text-[7px] text-white font-black uppercase tracking-wider bg-red-600 px-1 py-0.5 rounded">OUT</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col grow">
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-extrabold text-[#5B240B] m-0">{p.name}</h4>
+                        {isOutOfStock ? (
+                          <span className="text-[9px] font-black bg-red-50 text-red-600 border border-red-100 px-1.5 py-0.5 rounded">Out of Stock</span>
+                        ) : (
+                          <span className="text-[9px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100 px-1.5 py-0.5 rounded">{stock} left</span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 line-clamp-2 m-0 mt-1 leading-relaxed">{p.description}</p>
+                    </div>
+                    <div className="flex items-center gap-4 ml-auto">
+                      <span className="text-sm font-black text-[#D65113]">₱{p.price}</span>
+                      {!isOutOfStock && (
+                        <div className={`w-5 h-5 rounded-full border-2 border-slate-300 flex items-center justify-center ${
+                          diySelection.drink?.id === p.id ? 'border-[#D65113] bg-[#D65113]' : ''
+                        }`}>
+                          {diySelection.drink?.id === p.id && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-white"></div>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 

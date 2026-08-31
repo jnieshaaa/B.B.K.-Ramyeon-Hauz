@@ -4,6 +4,51 @@ import { PRODUCTS, CATEGORIES } from '../data/menuData';
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 
 export function useMenuController() {
+  // --- Global Toast Notification State ---
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+  };
+
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  // --- Global Maintenance Mode State ---
+  const [maintenanceMode, setMaintenanceMode] = useState<{ active: boolean; message: string }>({
+    active: false,
+    message: 'We are currently updating our product catalog prices. Please check back shortly!'
+  });
+
+  const updateMaintenanceMode = async (active: boolean, message?: string) => {
+    const updatedSettings = {
+      active,
+      message: message || maintenanceMode.message
+    };
+    setMaintenanceMode(updatedSettings);
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase.from('store_settings').upsert({
+          key: 'maintenance_mode',
+          value: updatedSettings
+        });
+        if (error) {
+          console.error('Failed to update maintenance settings in Supabase:', error);
+          showToast(`Database update failed: ${error.message}`, 'error');
+        } else {
+          showToast(`Catalog maintenance mode turned ${active ? 'ON' : 'OFF'}.`, 'success');
+        }
+      } catch (err) {
+        console.error('Failed to update maintenance settings in Supabase:', err);
+      }
+    }
+  };
+
   // --- Categories State ---
   const [categories, setCategories] = useState<Category[]>(() => {
     const saved = localStorage.getItem('bbk_menu_categories');
@@ -227,6 +272,12 @@ export function useMenuController() {
             });
             setAuditLogs(mappedLogs);
           }
+
+          // 7. Load store settings (like maintenance mode)
+          const { data: dbSettings } = await client.from('store_settings').select('*').eq('key', 'maintenance_mode').maybeSingle();
+          if (dbSettings && dbSettings.value) {
+            setMaintenanceMode(dbSettings.value as any);
+          }
         }
       } catch (err) {
         console.error('Failed to sync databases from Supabase:', err);
@@ -380,6 +431,17 @@ export function useMenuController() {
     const productWithId: Product = { ...newProd, id: nextId };
     setProducts(prev => [...prev, productWithId]);
 
+    // Automatically create matching inventory item with 0 stock
+    const matchingInventory: InventoryItem = {
+      id: nextId,
+      name: productWithId.name,
+      currentStock: 0,
+      minStockLevel: 10,
+      unit: 'pcs',
+      category: productWithId.category
+    };
+    setInventory(prev => [...prev, matchingInventory]);
+
     if (isSupabaseConfigured && supabase) {
       try {
         const { error } = await supabase.from('products').insert({
@@ -393,7 +455,21 @@ export function useMenuController() {
         });
         if (error) {
           console.error('Failed to save product to Supabase:', error);
-          alert(`Database save failed: ${error.message}`);
+          showToast(`Database save failed: ${error.message}`, 'error');
+        }
+
+        // Insert matching inventory item in Supabase
+        const { error: invError } = await supabase.from('inventory').insert({
+          id: matchingInventory.id,
+          name: matchingInventory.name,
+          current_stock: matchingInventory.currentStock,
+          min_stock_level: matchingInventory.minStockLevel,
+          unit: matchingInventory.unit,
+          category: matchingInventory.category,
+          last_audited: null
+        });
+        if (invError) {
+          console.error('Failed to save matching inventory item:', invError);
         }
       } catch (err) {
         console.error('Failed to save product to Supabase:', err);
@@ -404,6 +480,11 @@ export function useMenuController() {
 
   const editProduct = async (updatedProd: Product) => {
     setProducts(prev => prev.map(p => p.id === updatedProd.id ? updatedProd : p));
+
+    // Update matching inventory item details
+    setInventory(prev => prev.map(item => 
+      item.id === updatedProd.id ? { ...item, name: updatedProd.name, category: updatedProd.category } : item
+    ));
 
     if (isSupabaseConfigured && supabase) {
       try {
@@ -418,7 +499,16 @@ export function useMenuController() {
         
         if (error) {
           console.error('Failed to update product in Supabase:', error);
-          alert(`Database update failed: ${error.message}`);
+          showToast(`Database update failed: ${error.message}`, 'error');
+        }
+
+        // Update matching inventory item in Supabase
+        const { error: invError } = await supabase.from('inventory').update({
+          name: updatedProd.name,
+          category: updatedProd.category
+        }).eq('id', updatedProd.id);
+        if (invError) {
+          console.error('Failed to update matching inventory details:', invError);
         }
       } catch (err) {
         console.error('Failed to update product in Supabase:', err);
@@ -440,12 +530,21 @@ export function useMenuController() {
       return { ramyeon, toppings, drink };
     });
 
+    // Delete matching inventory item
+    setInventory(prev => prev.filter(item => item.id !== id));
+
     if (isSupabaseConfigured && supabase) {
       try {
         const { error } = await supabase.from('products').delete().eq('id', id);
         if (error) {
           console.error('Failed to delete product in Supabase:', error);
-          alert(`Database delete failed: ${error.message}`);
+          showToast(`Database delete failed: ${error.message}`, 'error');
+        }
+
+        // Delete matching inventory item from Supabase
+        const { error: invError } = await supabase.from('inventory').delete().eq('id', id);
+        if (invError) {
+          console.error('Failed to delete matching inventory item:', invError);
         }
       } catch (err) {
         console.error('Failed to delete product in Supabase:', err);
@@ -477,17 +576,17 @@ export function useMenuController() {
           if (insErr) throw insErr;
         } catch (err: any) {
           console.error('Failed to reset products in Supabase:', err);
-          alert(`Database reset failed: ${err.message}`);
+          showToast(`Database reset failed: ${err.message}`, 'error');
         }
       }
     }
   };
 
   // --- Inventory & Auditing Actions ---
-  const addInventoryItem = async (item: Omit<InventoryItem, 'id' | 'lastAudited'>) => {
+  const addInventoryItem = async (item: Omit<InventoryItem, 'id' | 'lastAudited'> & { id?: string }) => {
     const newItem: InventoryItem = {
       ...item,
-      id: `inv_${Date.now()}`
+      id: item.id || `inv_${Date.now()}`
     };
     setInventory(prev => [...prev, newItem]);
 
@@ -504,7 +603,7 @@ export function useMenuController() {
         });
         if (error) {
           console.error('Failed to add inventory item in Supabase:', error);
-          alert(`Database save failed: ${error.message}`);
+          showToast(`Database save failed: ${error.message}`, 'error');
         }
       } catch (err) {
         console.error('Failed to add inventory item in Supabase:', err);
@@ -514,18 +613,41 @@ export function useMenuController() {
   };
 
   const adjustStock = async (itemId: string, newCount: number) => {
-    setInventory(prev => prev.map(item => 
-      item.id === itemId ? { ...item, currentStock: newCount } : item
-    ));
+    setInventory(prev => {
+      const exists = prev.some(item => item.id === itemId);
+      if (exists) {
+        return prev.map(item => 
+          item.id === itemId ? { ...item, currentStock: newCount, lastAudited: new Date().toLocaleString() } : item
+        );
+      } else {
+        const prod = products.find(p => p.id === itemId);
+        return [...prev, {
+          id: itemId,
+          name: prod ? prod.name : 'Unknown Product',
+          currentStock: newCount,
+          minStockLevel: 5,
+          unit: 'pcs',
+          category: prod ? prod.category : 'toppings',
+          lastAudited: new Date().toLocaleString()
+        }];
+      }
+    });
 
     if (isSupabaseConfigured && supabase) {
       try {
-        const { error } = await supabase.from('inventory').update({ 
-          current_stock: newCount 
-        }).eq('id', itemId);
+        const prod = products.find(p => p.id === itemId);
+        const { error } = await supabase.from('inventory').upsert({ 
+          id: itemId,
+          name: prod ? prod.name : 'Unknown Product',
+          current_stock: newCount,
+          min_stock_level: 5,
+          unit: 'pcs',
+          category: prod ? prod.category : 'toppings',
+          last_audited: new Date().toLocaleString()
+        });
         if (error) {
           console.error('Failed to adjust inventory stock in Supabase:', error);
-          alert(`Database update failed: ${error.message}`);
+          showToast(`Database update failed: ${error.message}`, 'error');
         }
       } catch (err) {
         console.error('Failed to adjust inventory stock in Supabase:', err);
@@ -535,30 +657,65 @@ export function useMenuController() {
 
   const logAuditRecord = async (entry: Omit<AuditLogEntry, 'id' | 'itemName' | 'recordedCount' | 'discrepancy'>) => {
     const targetItem = inventory.find(item => item.id === entry.itemId);
-    if (!targetItem) return;
+    const targetProduct = products.find(p => p.id === entry.itemId);
+    if (!targetItem && !targetProduct) return;
 
-    const recorded = targetItem.currentStock;
+    const recorded = targetItem ? targetItem.currentStock : 0;
     const diff = entry.physicalCount - recorded;
+    const itemName = targetItem ? targetItem.name : (targetProduct ? targetProduct.name : 'Unknown');
     const newId = `audit_${Date.now()}`;
 
     const newAuditLog: AuditLogEntry = {
       ...entry,
       id: newId,
-      itemName: targetItem.name,
+      itemName: itemName,
       recordedCount: recorded,
       discrepancy: diff
     };
 
     setAuditLogs(prev => [newAuditLog, ...prev]);
-    setInventory(prev => prev.map(item => 
-      item.id === entry.itemId 
-        ? { ...item, currentStock: entry.physicalCount, lastAudited: entry.auditDate } 
-        : item
-    ));
+    
+    setInventory(prev => {
+      const exists = prev.some(item => item.id === entry.itemId);
+      if (exists) {
+        return prev.map(item => 
+          item.id === entry.itemId 
+            ? { ...item, currentStock: entry.physicalCount, lastAudited: entry.auditDate } 
+            : item
+        );
+      } else {
+        return [...prev, {
+          id: entry.itemId,
+          name: itemName,
+          currentStock: entry.physicalCount,
+          minStockLevel: 5,
+          unit: 'pcs',
+          category: targetProduct ? targetProduct.category : 'toppings',
+          lastAudited: entry.auditDate
+        }];
+      }
+    });
 
     if (isSupabaseConfigured && supabase) {
       try {
-        // Insert audit log
+        // 1. Upsert inventory item stock levels first to satisfy foreign key constraint
+        const { error: invError } = await supabase.from('inventory').upsert({
+          id: entry.itemId,
+          name: itemName,
+          current_stock: entry.physicalCount,
+          min_stock_level: 5,
+          unit: 'pcs',
+          category: targetProduct ? targetProduct.category : 'toppings',
+          last_audited: entry.auditDate
+        });
+
+        if (invError) {
+          console.error('Failed to update inventory in Supabase:', invError);
+          showToast(`Database update failed: ${invError.message}`, 'error');
+          return;
+        }
+
+        // 2. Insert audit log second
         const { error: logError } = await supabase.from('audit_log_entries').insert({
           item_id: entry.itemId,
           audit_date: entry.auditDate,
@@ -571,19 +728,7 @@ export function useMenuController() {
 
         if (logError) {
           console.error('Failed to log audit record in Supabase:', logError);
-          alert(`Database save failed: ${logError.message}`);
-          return;
-        }
-
-        // Update inventory item safety levels
-        const { error: invError } = await supabase.from('inventory').update({
-          current_stock: entry.physicalCount,
-          last_audited: entry.auditDate
-        }).eq('id', entry.itemId);
-
-        if (invError) {
-          console.error('Failed to update inventory in Supabase:', invError);
-          alert(`Database update failed: ${invError.message}`);
+          showToast(`Database save failed: ${logError.message}`, 'error');
         }
       } catch (err) {
         console.error('Failed to log audit record in Supabase:', err);
@@ -806,6 +951,14 @@ export function useMenuController() {
     removeTopping,
     setDiyDrink,
     resetDiyBuilder,
-    diyTotal
+    diyTotal,
+
+    // Global Toast Notification State
+    toast,
+    showToast,
+
+    // Maintenance Mode State & Action
+    maintenanceMode,
+    updateMaintenanceMode
   };
 }

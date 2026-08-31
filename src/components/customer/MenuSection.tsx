@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { Product, CategoryId, Category } from '../../models/MenuModel';
+import type { Product, CategoryId, Category, InventoryItem } from '../../models/MenuModel';
 
 interface MenuSectionProps {
   activeCategory: CategoryId;
@@ -9,6 +9,7 @@ interface MenuSectionProps {
   filteredProducts: Product[];
   onAddDiyItem: (product: Product) => void;
   categories: Category[];
+  inventory: InventoryItem[];
 }
 
 export default function MenuSection({
@@ -18,7 +19,8 @@ export default function MenuSection({
   setSearchQuery,
   filteredProducts,
   onAddDiyItem,
-  categories
+  categories,
+  inventory
 }: MenuSectionProps) {
   // Prepend virtual 'All Menu' category for customer filters
   const fullCategories = useMemo(() => {
@@ -147,10 +149,26 @@ export default function MenuSection({
         <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
           {filteredProducts.map((product) => {
             const catInfo = categories.find(c => c.id === product.category);
+            const invItem = inventory?.find(i => i.id === product.id);
+            const stock = invItem ? invItem.currentStock : 0;
+            const isOutOfStock = stock <= 0;
+
             return (
-              <div key={product.id} className="bg-white rounded-3xl border border-[#5B240B]/10 shadow-sm overflow-hidden flex flex-col hover:-translate-y-1.5 hover:shadow-xl transition-all duration-300">
+              <div key={product.id} className={`bg-white rounded-3xl border border-[#5B240B]/10 shadow-sm overflow-hidden flex flex-col hover:-translate-y-1.5 hover:shadow-xl transition-all duration-300 relative ${
+                isOutOfStock ? 'opacity-80' : ''
+              }`}>
                 <div className="relative aspect-[4/3] overflow-hidden bg-slate-50">
                   <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                  
+                  {/* OUT OF STOCK overlay block */}
+                  {isOutOfStock && (
+                    <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-10">
+                      <span className="bg-red-600 text-white font-black text-xs uppercase tracking-widest px-4 py-2 rounded-xl shadow-lg border border-red-500 animate-pulse">
+                        OUT OF STOCK
+                      </span>
+                    </div>
+                  )}
+
                   {product.isPopular && (
                     <span className="absolute top-4 left-4 bg-[#D65113] text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-md">
                       Best Seller
@@ -160,22 +178,41 @@ export default function MenuSection({
                     {catInfo ? catInfo.name : product.category}
                   </span>
                 </div>
+                
                 <div className="p-6 flex flex-col gap-3 grow">
                   <div className="flex justify-between items-start gap-4">
-                    <h3 className="text-[#5B240B] font-extrabold text-base m-0">{product.name}</h3>
+                    <div>
+                      <h3 className="text-[#5B240B] font-extrabold text-base m-0">{product.name}</h3>
+                      <div className="mt-1 flex items-center gap-1.5">
+                        {isOutOfStock ? (
+                          <span className="text-[10px] font-black text-red-600 uppercase tracking-wider">Out of Stock</span>
+                        ) : (
+                          <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">{stock} items left</span>
+                        )}
+                      </div>
+                    </div>
                     <span className="text-[#D65113] font-black text-base">₱{product.price}</span>
                   </div>
+                  
                   <p className="text-slate-500 text-xs leading-relaxed m-0 grow">{product.description}</p>
+                  
                   <div className="mt-3">
                     <button
                       type="button"
-                      className="w-full bg-[#5B240B] hover:bg-[#D65113] text-white flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-xs shadow-sm transition-all border-none cursor-pointer outline-none"
-                      onClick={() => onAddDiyItem(product)}
+                      className={`w-full flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-xs shadow-sm transition-all border-none cursor-pointer outline-none ${
+                        isOutOfStock 
+                          ? 'bg-slate-100 text-slate-400 cursor-not-allowed shadow-none'
+                          : 'bg-[#5B240B] hover:bg-[#D65113] text-white'
+                      }`}
+                      onClick={() => !isOutOfStock && onAddDiyItem(product)}
+                      disabled={isOutOfStock}
                     >
-                      <span>Add to DIY Builder</span>
-                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                      </svg>
+                      <span>{isOutOfStock ? 'Sold Out' : 'Add to DIY Builder'}</span>
+                      {!isOutOfStock && (
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                        </svg>
+                      )}
                     </button>
                   </div>
                 </div>
