@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import type { Inquiry } from '../../models/MenuModel';
+import type { Inquiry, ContactInfo } from '../../models/MenuModel';
 
 interface FooterProps {
+  contactInfo: ContactInfo;
   submitInquiry: (inquiry: Omit<Inquiry, 'id' | 'status' | 'timestamp'>) => void;
 }
 
-export default function Footer({ submitInquiry }: FooterProps) {
+export default function Footer({ contactInfo, submitInquiry }: FooterProps) {
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -59,8 +60,8 @@ export default function Footer({ submitInquiry }: FooterProps) {
               <div className="flex items-start gap-4">
                 <div className="flex flex-col gap-1">
                   <h4 className="text-xs text-[#FAF1D6]/75 uppercase tracking-widest font-black m-0">Phone Number</h4>
-                  <a href="tel:09751841209" className="text-white hover:text-[#FAF1D6] font-bold text-base no-underline">
-                    0975 184 1209
+                  <a href={`tel:${contactInfo.phone.replace(/\s+/g, '')}`} className="text-white hover:text-[#FAF1D6] font-bold text-base no-underline">
+                    {contactInfo.phone}
                   </a>
                 </div>
               </div>
@@ -68,8 +69,8 @@ export default function Footer({ submitInquiry }: FooterProps) {
               <div className="flex items-start gap-4">
                 <div className="flex flex-col gap-1">
                   <h4 className="text-xs text-[#FAF1D6]/75 uppercase tracking-widest font-black m-0">Email Address</h4>
-                  <a href="mailto:bbkramyeonhauz@gmail.com" className="text-white hover:text-[#FAF1D6] font-bold text-base no-underline">
-                    bbkramyeonhauz@gmail.com
+                  <a href={`mailto:${contactInfo.email}`} className="text-white hover:text-[#FAF1D6] font-bold text-base no-underline">
+                    {contactInfo.email}
                   </a>
                 </div>
               </div>
@@ -77,8 +78,8 @@ export default function Footer({ submitInquiry }: FooterProps) {
               <div className="flex items-start gap-4">
                 <div className="flex flex-col gap-1">
                   <h4 className="text-xs text-[#FAF1D6]/75 uppercase tracking-widest font-black m-0">Facebook Messenger</h4>
-                  <a href="https://m.me/" target="_blank" rel="noopener noreferrer" className="text-white hover:text-[#FAF1D6] font-bold text-base no-underline">
-                    B B K Ramyeon Hauz
+                  <a href={contactInfo.messengerLink} target="_blank" rel="noopener noreferrer" className="text-white hover:text-[#FAF1D6] font-bold text-base no-underline">
+                    {contactInfo.messengerName}
                   </a>
                 </div>
               </div>
@@ -87,10 +88,10 @@ export default function Footer({ submitInquiry }: FooterProps) {
                 <div className="flex flex-col gap-1">
                   <h4 className="text-xs text-[#FAF1D6]/75 uppercase tracking-widest font-black m-0">Our Location</h4>
                   <p className="text-white text-sm m-0 leading-relaxed">
-                    A. Bonifacio Street, Brgy. 7B, San Pablo City, Philippines, 4000
+                    {contactInfo.address}
                   </p>
                   <small className="text-[#FAF1D6]/50 text-xs mt-1">
-                    (Near Maligaya Bakery, in front of Crispy King)
+                    (Near {contactInfo.landmarkNear}, in front of {contactInfo.landmarkFront})
                   </small>
                 </div>
               </div>
@@ -104,7 +105,7 @@ export default function Footer({ submitInquiry }: FooterProps) {
               </div>
               <div className="flex flex-col gap-2">
                 <div className="flex items-center gap-3 text-xs text-white/80 py-1">
-                  <span>Maligaya Bakery (Near Us)</span>
+                  <span>{contactInfo.landmarkNear}</span>
                 </div>
                 <div className="border-t border-dashed border-white/10 my-1"></div>
                 <div className="flex items-center gap-3 text-xs py-1 text-[#FAF1D6] font-extrabold">
@@ -112,7 +113,7 @@ export default function Footer({ submitInquiry }: FooterProps) {
                 </div>
                 <div className="border-t border-dashed border-white/10 my-1"></div>
                 <div className="flex items-center gap-3 text-xs text-white/80 py-1">
-                  <span>Crispy King (In Front)</span>
+                  <span>{contactInfo.landmarkFront}</span>
                 </div>
               </div>
             </div>

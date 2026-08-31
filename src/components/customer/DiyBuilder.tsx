@@ -1,7 +1,9 @@
-import type { Product, DIYSelection } from '../../models/MenuModel';
-import { PRODUCTS } from '../../data/menuData';
+import { useState } from 'react';
+import type { Product, DIYSelection, ContactInfo } from '../../models/MenuModel';
+import AuthModal from './AuthModal';
 
 interface DiyBuilderProps {
+  products: Product[];
   diySelection: DIYSelection;
   setDiyRamyeon: (product: Product | null) => void;
   addTopping: (product: Product) => void;
@@ -9,21 +11,30 @@ interface DiyBuilderProps {
   setDiyDrink: (product: Product | null) => void;
   resetDiyBuilder: () => void;
   diyTotal: number;
+  clientUser: { email: string; name?: string; phone?: string } | null;
+  setClientUser: (user: { email: string; name?: string; phone?: string } | null) => void;
+  contactInfo: ContactInfo;
 }
 
 export default function DiyBuilder({
+  products,
   diySelection,
   setDiyRamyeon,
   addTopping,
   removeTopping,
   setDiyDrink,
   resetDiyBuilder,
-  diyTotal
+  diyTotal,
+  clientUser,
+  setClientUser,
+  contactInfo
 }: DiyBuilderProps) {
-  // Filter products by category for easy step selection
-  const ramyeons = PRODUCTS.filter(p => p.category === 'ramyeon');
-  const toppings = PRODUCTS.filter(p => p.category === 'toppings');
-  const drinks = PRODUCTS.filter(p => p.category === 'drinks');
+  // Filter products dynamically from database state so that admin modifications show up here
+  const ramyeons = products.filter(p => p.category === 'ramyeon');
+  const toppings = products.filter(p => p.category === 'toppings');
+  const drinks = products.filter(p => p.category === 'drinks');
+
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
 
   const getToppingQuantity = (productId: string) => {
     const found = diySelection.toppings.find(t => t.product.id === productId);
@@ -31,6 +42,14 @@ export default function DiyBuilder({
   };
 
   const handleOrderDineIn = () => {
+    if (!clientUser) {
+      setIsAuthModalOpen(true);
+    } else {
+      proceedToBookingForm();
+    }
+  };
+
+  const proceedToBookingForm = (prefilledUser?: { name?: string; phone?: string; email?: string }) => {
     // Generate a summary text to pre-fill the inquiry message
     let summary = `Hi B.B.K. Ramyeon Hauz! I'd like to dine in and order this DIY bowl combination:\n`;
     if (diySelection.ramyeon) {
@@ -52,6 +71,17 @@ export default function DiyBuilder({
     const messageInput = document.getElementById('inquiry-message') as HTMLTextAreaElement;
     if (messageInput) {
       messageInput.value = summary;
+    }
+
+    // Prefill user details if logged in
+    const activeUser = prefilledUser || clientUser;
+    if (activeUser) {
+      const nameInput = document.getElementById('inquiry-name') as HTMLInputElement;
+      const phoneInput = document.getElementById('inquiry-phone') as HTMLInputElement;
+      const emailInput = document.getElementById('inquiry-email') as HTMLInputElement;
+      if (nameInput && activeUser.name) nameInput.value = activeUser.name;
+      if (phoneInput && activeUser.phone) phoneInput.value = activeUser.phone;
+      if (emailInput && activeUser.email) emailInput.value = activeUser.email;
     }
 
     // Scroll to inquiries
@@ -296,7 +326,23 @@ export default function DiyBuilder({
             </div>
           </div>
         </div>
+
       </div>
+
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => setIsAuthModalOpen(false)}
+        contactInfo={contactInfo}
+        diySelection={diySelection}
+        diyTotal={diyTotal}
+        onAuthSuccess={(user) => {
+          setClientUser(user);
+          proceedToBookingForm(user);
+        }}
+        onProceedAsGuest={() => {
+          proceedToBookingForm();
+        }}
+      />
     </section>
   );
 }

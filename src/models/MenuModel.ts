@@ -3,15 +3,15 @@ export interface Product {
   name: string;
   price: number;
   description: string;
-  category: 'ramyeon' | 'toppings' | 'drinks' | 'silog' | 'combos';
+  category: string;
   image: string;
   isPopular?: boolean;
 }
 
-export type CategoryId = 'all' | 'ramyeon' | 'toppings' | 'drinks' | 'silog' | 'combos';
+export type CategoryId = string;
 
 export interface Category {
-  id: CategoryId;
+  id: string;
   name: string;
   iconName: string; // Used to display matching food icons
 }
@@ -61,4 +61,14 @@ export interface StockMovement {
   date: string;          // YYYY-MM-DD
   displayedQty: number;  // Displayed/added stock today
   soldQty: number;       // Qty sold today
+}
+
+export interface ContactInfo {
+  phone: string;
+  email: string;
+  messengerName: string;
+  messengerLink: string;
+  address: string;
+  landmarkNear: string;
+  landmarkFront: string;
 }

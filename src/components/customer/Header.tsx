@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react';
 
-export default function Header() {
+interface HeaderProps {
+  clientUser: { email: string; name?: string; phone?: string } | null;
+  onLogout: () => void;
+}
+
+export default function Header({ clientUser, onLogout }: HeaderProps) {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -38,13 +43,11 @@ export default function Header() {
       <div className="max-w-6xl mx-auto px-6 flex justify-between items-center">
         <a 
           href="#" 
-          className="flex items-center gap-2 text-[#5B240B] font-extrabold text-lg no-underline"
+          className="flex items-center gap-2.5 text-[#5B240B] font-extrabold text-lg no-underline"
           onClick={(e) => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
         >
-          <span className="bg-[#D65113] text-white px-2 py-0.5 rounded-lg text-xs font-black tracking-wider">
-            B.B.K.
-          </span>
-          <span className="logo-text">Ramyeon Hauz</span>
+          <img src="/assets/logo.png" alt="B.B.K. Logo" className="w-9 h-9 object-contain" />
+          <span className="logo-text tracking-tight">B.B.K. Ramyeon Hauz</span>
         </a>
 
         {/* Desktop Menu */}
@@ -77,6 +80,21 @@ export default function Header() {
           >
             Dine In / Inquire
           </button>
+
+          {clientUser ? (
+            <div className="flex items-center gap-3 ml-2 border-l border-[#5B240B]/15 pl-4 shrink-0">
+              <span className="text-xs text-[#5B240B]/85 font-extrabold max-w-[120px] truncate" title={clientUser.email}>
+                {clientUser.name || clientUser.email.split('@')[0]}
+              </span>
+              <button
+                type="button"
+                onClick={onLogout}
+                className="bg-transparent border border-red-500/25 hover:bg-red-500 hover:text-white text-red-500 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer outline-none"
+              >
+                Sign Out
+              </button>
+            </div>
+          ) : null}
         </nav>
 
         {/* Mobile Toggle Button */}
@@ -123,6 +141,21 @@ export default function Header() {
           >
             Dine In / Inquire
           </button>
+
+          {clientUser && (
+            <div className="flex flex-col gap-3 mt-4 pt-4 border-t border-[#5B240B]/10 shrink-0">
+              <span className="text-xs text-[#5B240B]/80 font-bold truncate">
+                Logged in: {clientUser.email}
+              </span>
+              <button
+                type="button"
+                onClick={() => { setMobileMenuOpen(false); onLogout(); }}
+                className="w-full bg-red-500/10 border border-red-500/20 hover:bg-red-500 text-red-500 hover:text-white py-2.5 rounded-xl font-bold text-xs cursor-pointer transition-all outline-none text-center"
+              >
+                Sign Out
+              </button>
+            </div>
+          )}
         </nav>
       </div>
     </header>

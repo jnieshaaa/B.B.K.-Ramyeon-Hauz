@@ -15,7 +15,6 @@ export default function InventoryManager({
   inventory,
   addInventoryItem,
   logAuditRecord,
-  resetInventory,
   stockMovements,
   logStockMovement,
   resetStockMovements
@@ -30,7 +29,7 @@ export default function InventoryManager({
   // Modal Dialog states for Inventory Audit
   const [isAuditModalOpen, setIsAuditModalOpen] = useState(false);
   const [selectedAuditItem, setSelectedAuditItem] = useState<InventoryItem | null>(null);
-  
+
   // Form states for Inventory Audit entry
   const [auditPhysicalCount, setAuditPhysicalCount] = useState(0);
   const [auditAuditorName, setAuditAuditorName] = useState('');
@@ -172,8 +171,8 @@ export default function InventoryManager({
           <div className="bg-white border border-slate-200 rounded-2xl p-4 md:p-5 shadow-sm mb-6 box-border font-sans">
             <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-6 flex-wrap">
               <div className="flex gap-2 flex-wrap">
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className={inventoryCategory === 'all'
                     ? 'bg-blue-600 text-white border border-blue-600 px-4 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 cursor-pointer transition-all outline-none'
                     : 'bg-slate-50 hover:bg-slate-100 text-slate-900 border border-slate-200 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all outline-none'
@@ -182,8 +181,8 @@ export default function InventoryManager({
                 >
                   All Inventory
                 </button>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className={inventoryCategory === 'ramyeon'
                     ? 'bg-blue-600 text-white border border-blue-600 px-4 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 cursor-pointer transition-all outline-none'
                     : 'bg-slate-50 hover:bg-slate-100 text-slate-900 border border-slate-200 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all outline-none'
@@ -192,8 +191,8 @@ export default function InventoryManager({
                 >
                   Ramen Noodles
                 </button>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className={inventoryCategory === 'toppings'
                     ? 'bg-blue-600 text-white border border-blue-600 px-4 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 cursor-pointer transition-all outline-none'
                     : 'bg-slate-50 hover:bg-slate-100 text-slate-900 border border-slate-200 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all outline-none'
@@ -202,8 +201,8 @@ export default function InventoryManager({
                 >
                   Fresh Toppings
                 </button>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className={inventoryCategory === 'drinks'
                     ? 'bg-blue-600 text-white border border-blue-600 px-4 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 cursor-pointer transition-all outline-none'
                     : 'bg-slate-50 hover:bg-slate-100 text-slate-900 border border-slate-200 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all outline-none'
@@ -212,8 +211,8 @@ export default function InventoryManager({
                 >
                   Drinks & Beverages
                 </button>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className={inventoryCategory === 'silog'
                     ? 'bg-blue-600 text-white border border-blue-600 px-4 py-2 rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 cursor-pointer transition-all outline-none'
                     : 'bg-slate-50 hover:bg-slate-100 text-slate-900 border border-slate-200 px-4 py-2 rounded-xl text-xs font-bold cursor-pointer transition-all outline-none'
@@ -243,15 +242,8 @@ export default function InventoryManager({
                     </button>
                   )}
                 </div>
-                <button 
-                  type="button" 
-                  className="bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white border border-red-500/20 px-4 py-2 rounded-xl font-bold text-xs cursor-pointer transition-all outline-none"
-                  onClick={resetInventory}
-                >
-                  Reset Stocks
-                </button>
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="bg-blue-600 hover:bg-slate-900 text-white border-none px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer shadow-md shadow-blue-500/15 hover:shadow-lg transition-all outline-none"
                   onClick={() => setIsAddInvModalOpen(true)}
                 >
@@ -280,9 +272,8 @@ export default function InventoryManager({
                   filteredInventory.map((item) => {
                     const isLow = item.currentStock <= item.minStockLevel;
                     return (
-                      <tr key={item.id} className={`hover:bg-slate-50/50 transition-colors ${
-                        isLow ? 'bg-red-50/5' : ''
-                      }`}>
+                      <tr key={item.id} className={`hover:bg-slate-50/50 transition-colors ${isLow ? 'bg-red-50/5' : ''
+                        }`}>
                         <td className="px-5 py-4 border-b border-slate-100 align-middle text-sm text-slate-600">
                           <span className="font-mono text-xs text-slate-500">{item.id}</span>
                         </td>
@@ -437,8 +428,8 @@ export default function InventoryManager({
           <div className="bg-white rounded-3xl w-full max-w-[540px] shadow-2xl overflow-hidden font-sans">
             <div className="px-6 py-5 bg-slate-950 text-white flex justify-between items-center">
               <h3 className="text-base font-extrabold m-0">Log Manual Physical Audit Count</h3>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="text-2xl text-white bg-transparent border-none cursor-pointer opacity-80 hover:opacity-100 outline-none"
                 onClick={() => setIsAuditModalOpen(false)}
               >
@@ -496,15 +487,15 @@ export default function InventoryManager({
               </div>
 
               <div className="flex justify-end gap-3 mt-4">
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="bg-slate-100 hover:bg-slate-200 text-slate-900 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer border-none transition-all"
                   onClick={() => setIsAuditModalOpen(false)}
                 >
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="bg-blue-600 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer border-none shadow-md shadow-blue-500/15 hover:shadow-lg transition-all"
                 >
                   Save Audit Adjustment
@@ -521,8 +512,8 @@ export default function InventoryManager({
           <div className="bg-white rounded-3xl w-full max-w-[540px] shadow-2xl overflow-hidden font-sans">
             <div className="px-6 py-5 bg-slate-950 text-white flex justify-between items-center">
               <h3 className="text-base font-extrabold m-0">Add New Inventory Stock Item</h3>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 className="text-2xl text-white bg-transparent border-none cursor-pointer opacity-80 hover:opacity-100 outline-none"
                 onClick={() => setIsAddInvModalOpen(false)}
               >
@@ -608,15 +599,15 @@ export default function InventoryManager({
               </div>
 
               <div className="flex justify-end gap-3 mt-4">
-                <button 
-                  type="button" 
+                <button
+                  type="button"
                   className="bg-slate-100 hover:bg-slate-200 text-slate-900 px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer border-none transition-all"
                   onClick={() => setIsAddInvModalOpen(false)}
                 >
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="bg-blue-600 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl font-bold text-xs cursor-pointer border-none shadow-md shadow-blue-500/15 hover:shadow-lg transition-all"
                 >
                   Add Item to Stock
@@ -703,7 +694,7 @@ export default function InventoryManager({
               </div>
 
               <div className="bg-slate-100 p-3.5 rounded-xl text-xs text-slate-600 font-semibold">
-                Calculated Stock Impact: This will change current stock level by: 
+                Calculated Stock Impact: This will change current stock level by:
                 <strong className={`ml-1 ${moveDisplayed - moveSold >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                   {moveDisplayed - moveSold >= 0 ? `+${moveDisplayed - moveSold}` : `${moveDisplayed - moveSold}`} items
                 </strong>.

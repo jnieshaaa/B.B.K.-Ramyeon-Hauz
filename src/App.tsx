@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import Header from './components/customer/Header';
 import Hero from './components/customer/Hero';
 import MenuSection from './components/customer/MenuSection';
@@ -5,11 +6,17 @@ import DiyBuilder from './components/customer/DiyBuilder';
 import Footer from './components/customer/Footer';
 import AdminDashboard from './components/admin/AdminDashboard';
 import { useMenuController } from './hooks/useMenuController';
-import type { Product } from './models/MenuModel';
+import type { Product, ContactInfo } from './models/MenuModel';
 import './App.css';
 
 function App() {
   const {
+    // Categories State & Actions
+    categories,
+    addCategory,
+    editCategory,
+    deleteCategory,
+
     // Products State & Actions
     products,
     addProduct,
@@ -49,6 +56,54 @@ function App() {
     resetDiyBuilder,
     diyTotal
   } = useMenuController();
+
+  // Dynamic Contact Information State (backed by localStorage)
+  const [contactInfo, setContactInfo] = useState<ContactInfo>(() => {
+    const saved = localStorage.getItem('bbk_contact_info');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        // Fallback
+      }
+    }
+    return {
+      phone: '0975 184 1209',
+      email: 'bbkramyeonhauz@gmail.com',
+      messengerName: 'B B K Ramyeon Hauz',
+      messengerLink: 'https://m.me/bbkramyeonhauz',
+      address: 'A. Bonifacio Street, Brgy. 7B, San Pablo City, Philippines, 4000',
+      landmarkNear: 'Maligaya Bakery (Near Us)',
+      landmarkFront: 'Crispy King (In Front)'
+    };
+  });
+
+  const updateContactInfo = (newInfo: ContactInfo) => {
+    setContactInfo(newInfo);
+    localStorage.setItem('bbk_contact_info', JSON.stringify(newInfo));
+  };
+
+  // Client (Customer) Auth Session State
+  const [clientUser, setClientUser] = useState<{ email: string; name?: string; phone?: string } | null>(() => {
+    const saved = sessionStorage.getItem('bbk_client_auth');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        // Fallback
+      }
+    }
+    return null;
+  });
+
+  const handleSetClientUser = (user: { email: string; name?: string; phone?: string } | null) => {
+    setClientUser(user);
+    if (user) {
+      sessionStorage.setItem('bbk_client_auth', JSON.stringify(user));
+    } else {
+      sessionStorage.removeItem('bbk_client_auth');
+    }
+  };
 
   // Subdomain & query param routing
   const isAdmin = window.location.hostname.startsWith('admin.') || 
@@ -95,6 +150,10 @@ function App() {
         editProduct={editProduct}
         deleteProduct={deleteProduct}
         resetProducts={resetProducts}
+        categories={categories}
+        addCategory={addCategory}
+        editCategory={editCategory}
+        deleteCategory={deleteCategory}
         inquiries={inquiries}
         resolveInquiry={resolveInquiry}
         deleteInquiry={deleteInquiry}
@@ -106,6 +165,8 @@ function App() {
         stockMovements={stockMovements}
         logStockMovement={logStockMovement}
         resetStockMovements={resetStockMovements}
+        contactInfo={contactInfo}
+        updateContactInfo={updateContactInfo}
       />
     );
   }
@@ -113,7 +174,7 @@ function App() {
   return (
     <>
       {/* 1. Header (Navbar View) */}
-      <Header />
+      <Header clientUser={clientUser} onLogout={() => handleSetClientUser(null)} />
 
       {/* Main content wrapper */}
       <main style={{ marginTop: '72px' }}>
@@ -131,6 +192,7 @@ function App() {
           setSearchQuery={setSearchQuery}
           filteredProducts={filteredProducts}
           onAddDiyItem={handleAddDiyItem}
+          categories={categories}
         />
 
         {/* 4. DIY Calculator/Constructor View */}
@@ -142,11 +204,15 @@ function App() {
           setDiyDrink={setDiyDrink}
           resetDiyBuilder={resetDiyBuilder}
           diyTotal={diyTotal}
+          clientUser={clientUser}
+          setClientUser={handleSetClientUser}
+          contactInfo={contactInfo}
+          products={products}
         />
       </main>
 
       {/* 5. Inquiries, Map & Contact Form (Footer View) */}
-      <Footer submitInquiry={submitInquiry} />
+      <Footer contactInfo={contactInfo} submitInquiry={submitInquiry} />
     </>
   );
 }

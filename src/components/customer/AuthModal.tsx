@@ -1,0 +1,497 @@
+import { useState } from 'react';
+import type { ContactInfo, DIYSelection } from '../../models/MenuModel';
+import { supabase, isSupabaseConfigured } from '../../lib/supabaseClient';
+import { sha256 } from '../../utils/crypto';
+
+interface AuthModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  contactInfo: ContactInfo;
+  diySelection: DIYSelection;
+  diyTotal: number;
+  onAuthSuccess: (user: { email: string; name?: string; phone?: string }) => void;
+  onProceedAsGuest: () => void;
+}
+
+export default function AuthModal({
+  isOpen,
+  onClose,
+  contactInfo,
+  diySelection,
+  diyTotal,
+  onAuthSuccess,
+  onProceedAsGuest
+}: AuthModalProps) {
+  const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  if (!isOpen) return null;
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setLoading(true);
+
+    if (!email.trim() || !password.trim()) {
+      setErrorMsg('All fields are required.');
+      setLoading(false);
+      return;
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const hashedPassword = await sha256(password.trim());
+        const clientRoleHash = await sha256('client');
+
+        // Fetch user from DB
+        const { data, error } = await supabase
+          .from('users')
+          .select('email, password_hash, roles(role_hash)')
+          .eq('email', email.trim().toLowerCase())
+          .single();
+
+        if (error || !data) {
+          setErrorMsg('Invalid email or password credentials.');
+          setLoading(false);
+          return;
+        }
+
+        if (data.password_hash !== hashedPassword) {
+          setErrorMsg('Invalid email or password credentials.');
+          setLoading(false);
+          return;
+        }
+
+        const rolesData = data.roles as any;
+        if (!rolesData || rolesData.role_hash !== clientRoleHash) {
+          setErrorMsg('Unauthorized: This user account does not possess a client role.');
+          setLoading(false);
+          return;
+        }
+
+        // Successfully logged in
+        onAuthSuccess({ email: data.email });
+        onClose();
+      } catch (err) {
+        console.error('Client login database error:', err);
+        setErrorMsg('Database error occurred. Please try checking out as a guest.');
+      }
+    } else {
+      // Mock local client login for demo
+      if (email.trim().toLowerCase() === 'client@bbk.com' && password === 'client123') {
+        onAuthSuccess({ email: 'client@bbk.com', name: 'Demo Client', phone: '0900 000 0000' });
+        onClose();
+      } else {
+        setErrorMsg('Local demo verification failed. Use client@bbk.com / client123 or proceed as Guest.');
+      }
+    }
+    setLoading(false);
+  };
+
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMsg('');
+    setLoading(true);
+
+    if (!email.trim() || !password.trim() || !name.trim() || !phone.trim()) {
+      setErrorMsg('All fields are required.');
+      setLoading(false);
+      return;
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const hashedPassword = await sha256(password.trim());
+        const clientRoleHash = await sha256('client');
+
+        // 1. Find client role_id
+        const { data: roleData, error: roleError } = await supabase
+          .from('roles')
+          .select('id')
+          .eq('role_hash', clientRoleHash)
+          .single();
+
+        if (roleError || !roleData) {
+          setErrorMsg('Error retrieving client registration rules. Please contact shop.');
+          setLoading(false);
+          return;
+        }
+
+        // 2. Insert new user
+        const { error: insertError } = await supabase
+          .from('users')
+          .insert({
+            email: email.trim().toLowerCase(),
+            password_hash: hashedPassword,
+            role_id: roleData.id
+          });
+
+        if (insertError) {
+          if (insertError.code === '23505') {
+            setErrorMsg('An account with this email address already exists.');
+          } else {
+            setErrorMsg('Registration failed: ' + insertError.message);
+          }
+          setLoading(false);
+          return;
+        }
+
+        // Successfully registered & auto logged in
+        onAuthSuccess({ email: email.trim().toLowerCase(), name: name.trim(), phone: phone.trim() });
+        alert('Account created successfully! Proceeding to reserve your order...');
+        onClose();
+      } catch (err) {
+        console.error('Client registration database error:', err);
+        setErrorMsg('Database error occurred. Please try checking out as a guest.');
+      }
+    } else {
+      // Mock local client register
+      onAuthSuccess({ email: email.trim().toLowerCase(), name: name.trim(), phone: phone.trim() });
+      alert('Mock account created successfully!');
+      onClose();
+    }
+    setLoading(false);
+  };
+
+  // Helper trigger to download receipt as an e-invoice image
+  const handleDownloadReceiptClick = () => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const width = 450;
+    const toppingsCount = diySelection.toppings.length;
+    
+    // Calculate height dynamically
+    let height = 340; 
+    if (toppingsCount > 0) height += 40 + toppingsCount * 28;
+    if (diySelection.drink) height += 45;
+
+    canvas.width = width;
+    canvas.height = height;
+
+    // Background
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, width, height);
+
+    // Border outline
+    ctx.strokeStyle = '#5B240B';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(4, 4, width - 8, height - 8);
+
+    // Header Title
+    ctx.fillStyle = '#5B240B';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 20px Courier New';
+    ctx.fillText('B.B.K. RAMYEON HAUZ', width / 2, 45);
+
+    ctx.font = 'bold 12px Courier New';
+    ctx.fillText('DIY CUSTOM RECEIPT (E-INVOICE)', width / 2, 70);
+    ctx.font = '10px Courier New';
+    ctx.fillText('San Pablo City, Philippines', width / 2, 88);
+    ctx.fillText(`Date: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`, width / 2, 105);
+
+    // Dashed Divider
+    ctx.strokeStyle = '#5B240B';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(25, 120);
+    ctx.lineTo(width - 25, 120);
+    ctx.stroke();
+
+    let y = 145;
+    
+    // Base Ramyeon Section
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 12px Courier New';
+    ctx.fillText('BASE RAMYEON NOODLE', 30, y);
+    
+    ctx.font = '13px Courier New';
+    const baseName = diySelection.ramyeon ? diySelection.ramyeon.name : 'None Selected';
+    const basePrice = diySelection.ramyeon ? `PHP ${diySelection.ramyeon.price}` : 'PHP 0';
+    ctx.fillText(baseName, 35, y + 22);
+    ctx.textAlign = 'right';
+    ctx.fillText(basePrice, width - 35, y + 22);
+    
+    y += 45;
+
+    // Toppings Section
+    if (toppingsCount > 0) {
+      ctx.setLineDash([2, 2]);
+      ctx.beginPath();
+      ctx.moveTo(30, y);
+      ctx.lineTo(width - 30, y);
+      ctx.stroke();
+      y += 18;
+
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 12px Courier New';
+      ctx.fillText('TOPPINGS', 30, y);
+      
+      ctx.font = '13px Courier New';
+      diySelection.toppings.forEach(t => {
+        y += 24;
+        ctx.textAlign = 'left';
+        ctx.fillText(`${t.product.name} (x${t.quantity})`, 35, y);
+        ctx.textAlign = 'right';
+        ctx.fillText(`PHP ${t.product.price * t.quantity}`, width - 35, y);
+      });
+      y += 22;
+    }
+
+    // Drinks Section
+    if (diySelection.drink) {
+      ctx.setLineDash([2, 2]);
+      ctx.beginPath();
+      ctx.moveTo(30, y);
+      ctx.lineTo(width - 30, y);
+      ctx.stroke();
+      y += 18;
+
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 12px Courier New';
+      ctx.fillText('BEVERAGE', 30, y);
+      
+      ctx.font = '13px Courier New';
+      const drinkName = diySelection.drink.name;
+      const drinkPrice = `PHP ${diySelection.drink.price}`;
+      ctx.fillText(drinkName, 35, y + 22);
+      ctx.textAlign = 'right';
+      ctx.fillText(drinkPrice, width - 35, y + 22);
+      
+      y += 40;
+    }
+
+    // Total Section
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(25, y);
+    ctx.lineTo(width - 25, y);
+    ctx.stroke();
+    y += 25;
+
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 14px Courier New';
+    ctx.fillText('ESTIMATED TOTAL', 30, y);
+    ctx.textAlign = 'right';
+    ctx.font = 'bold 16px Courier New';
+    ctx.fillText(`PHP ${diyTotal}`, width - 35, y);
+
+    // Footer Section
+    y += 25;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(25, y);
+    ctx.lineTo(width - 25, y);
+    ctx.stroke();
+    
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 11px Courier New';
+    ctx.fillText('MAKE • EAT • ENJOY', width / 2, y + 25);
+    ctx.font = '9px Courier New';
+    ctx.fillText('Send this e-invoice receipt image to our FB Page/Email', width / 2, y + 42);
+    ctx.fillText('to complete your order reservation.', width / 2, y + 54);
+
+    // Download PNG link trigger
+    const dataUrl = canvas.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = `bbk-diy-recipe-${Date.now()}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  return (
+    <div className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs flex items-center justify-center z-[3000] p-4 box-border font-sans">
+      <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+        
+        {/* Modal Header */}
+        <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center shrink-0">
+          <h3 className="text-base font-black text-[#5B240B] m-0">Secure Your Order</h3>
+          <button 
+            type="button" 
+            className="text-slate-400 hover:text-slate-600 bg-transparent border-none text-xl font-bold cursor-pointer outline-none"
+            onClick={onClose}
+          >
+            &times;
+          </button>
+        </div>
+
+        {/* Modal Scrollable Contents */}
+        <div className="p-6 overflow-y-auto flex flex-col gap-6">
+          
+          {/* Tab Selector */}
+          <div className="flex border-b border-slate-200 shrink-0">
+            <button
+              type="button"
+              className={`flex-1 py-2.5 font-bold text-xs cursor-pointer border-none outline-none transition-all ${
+                activeTab === 'login' 
+                  ? 'border-b-2 border-b-blue-600 text-blue-600 bg-blue-50/10' 
+                  : 'bg-transparent text-slate-400 hover:text-slate-600'
+              }`}
+              onClick={() => { setActiveTab('login'); setErrorMsg(''); }}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              className={`flex-1 py-2.5 font-bold text-xs cursor-pointer border-none outline-none transition-all ${
+                activeTab === 'register' 
+                  ? 'border-b-2 border-b-blue-600 text-blue-600 bg-blue-50/10' 
+                  : 'bg-transparent text-slate-400 hover:text-slate-600'
+              }`}
+              onClick={() => { setActiveTab('register'); setErrorMsg(''); }}
+            >
+              Create Account
+            </button>
+          </div>
+
+          {errorMsg && (
+            <div className="bg-red-50 text-red-600 border border-red-100 p-3 rounded-xl text-xs font-bold text-center shrink-0">
+              {errorMsg}
+            </div>
+          )}
+
+          {/* Tab Views */}
+          {activeTab === 'login' ? (
+            <form onSubmit={handleLoginSubmit} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Email Address *</label>
+                <input
+                  type="email"
+                  className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-sans text-xs font-semibold text-slate-900 focus:border-blue-500 focus:bg-white outline-none transition-all box-border"
+                  placeholder="Enter your email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Password *</label>
+                <input
+                  type="password"
+                  className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-sans text-xs font-semibold text-slate-900 focus:border-blue-500 focus:bg-white outline-none transition-all box-border"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white border-none py-3 rounded-xl font-bold text-xs cursor-pointer shadow-md shadow-blue-500/15 transition-all outline-none text-center disabled:opacity-50"
+              >
+                {loading ? 'Signing In...' : 'Sign In & Proceed'}
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleRegisterSubmit} className="flex flex-col gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Full Name *</label>
+                  <input
+                    type="text"
+                    className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-sans text-xs font-semibold text-slate-900 focus:border-blue-500 focus:bg-white outline-none transition-all box-border"
+                    placeholder="Your name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Phone Number *</label>
+                  <input
+                    type="tel"
+                    className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-sans text-xs font-semibold text-slate-900 focus:border-blue-500 focus:bg-white outline-none transition-all box-border"
+                    placeholder="e.g. 0912 345 6789"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Email Address *</label>
+                <input
+                  type="email"
+                  className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-sans text-xs font-semibold text-slate-900 focus:border-blue-500 focus:bg-white outline-none transition-all box-border"
+                  placeholder="Enter email address"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Password *</label>
+                <input
+                  type="password"
+                  className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-sans text-xs font-semibold text-slate-900 focus:border-blue-500 focus:bg-white outline-none transition-all box-border"
+                  placeholder="Choose a password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white border-none py-3 rounded-xl font-bold text-xs cursor-pointer shadow-md shadow-blue-500/15 transition-all outline-none text-center disabled:opacity-50"
+              >
+                {loading ? 'Creating Account...' : 'Create Account & Proceed'}
+              </button>
+            </form>
+          )}
+
+          {/* OR Guest Checkout Section */}
+          <div className="border-t border-slate-100 pt-6 flex flex-col gap-4 text-center shrink-0">
+            <div className="relative flex py-2 items-center justify-center shrink-0">
+              <div className="flex-grow border-t border-slate-200"></div>
+              <span className="flex-shrink mx-4 text-xs font-bold text-slate-400 uppercase tracking-widest">Or Continue as Guest</span>
+              <div className="flex-grow border-t border-slate-200"></div>
+            </div>
+
+            <p className="text-xs text-slate-500 leading-relaxed m-0">
+              No account? No problem! Order directly via our Facebook Page or Email. We recommend downloading your DIY recipe e-invoice to send it to us:
+            </p>
+
+            <div className="bg-[#FAF1D6]/40 border border-[#5B240B]/10 rounded-2xl p-4 text-left flex flex-col gap-2.5">
+              <div className="text-[11px] text-[#5B240B]/90 font-semibold flex flex-col gap-1">
+                <span><strong>Messenger:</strong> <a href={contactInfo.messengerLink} target="_blank" rel="noopener noreferrer" className="text-[#D65113] hover:underline font-bold">{contactInfo.messengerName}</a></span>
+                <span><strong>Email:</strong> <a href={`mailto:${contactInfo.email}`} className="text-[#D65113] hover:underline font-bold">{contactInfo.email}</a></span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={handleDownloadReceiptClick}
+                className="w-full bg-[#5B240B] hover:bg-[#D65113] text-white border-none py-3 rounded-xl font-bold text-xs cursor-pointer transition-all outline-none text-center"
+              >
+                Download e-Invoice
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onProceedAsGuest();
+                  onClose();
+                }}
+                className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 border-none py-3 rounded-xl font-bold text-xs cursor-pointer transition-all outline-none text-center"
+              >
+                Continue to Form
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}

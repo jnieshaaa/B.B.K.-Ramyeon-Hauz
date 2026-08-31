@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Private environment variables
+.env
+.env.*
+!.env.example
+
+# Database schemas and queries folder
+supabase/

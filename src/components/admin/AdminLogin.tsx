@@ -25,6 +25,7 @@ export default function AdminLogin({
         
         {/* Left Column: Business Branding Themed Panel */}
         <div className="bg-slate-950 bg-gradient-to-br from-slate-900 to-slate-950 text-white p-12 md:p-20 flex flex-col justify-center h-full relative">
+          <img src="/assets/logo.png" alt="B.B.K. Logo" className="w-24 h-24 object-contain rounded-full bg-white/10 p-1 mb-6 align-self-start shadow-lg" />
           <div className="text-sm text-blue-500 font-bold uppercase tracking-widest mb-2">
             DIY Korean Ramyeon
           </div>
@@ -62,13 +63,13 @@ export default function AdminLogin({
             
             <div className="flex flex-col gap-2">
               <label htmlFor="login-username" className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                Username
+                Email Address
               </label>
               <input
-                type="text"
+                type="email"
                 id="login-username"
                 className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-950 text-sm font-semibold focus:border-blue-500 focus:bg-white focus:ring-4 focus:ring-blue-500/10 outline-none transition-all box-sizing-border"
-                placeholder="Enter username"
+                placeholder="Enter email address"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
@@ -107,7 +108,7 @@ export default function AdminLogin({
               Back to Customer Site
             </button>
             <p className="text-xs text-slate-400 m-0">
-              Demo credentials: <strong>admin</strong> | <strong>admin123</strong>
+              Demo credentials: <strong>admin@bbk.com</strong> | <strong>admin123</strong>
             </p>
           </div>
         </div>

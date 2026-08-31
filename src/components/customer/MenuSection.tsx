@@ -1,5 +1,5 @@
-import type { Product, CategoryId } from '../../models/MenuModel';
-import { CATEGORIES } from '../../data/menuData';
+import { useMemo } from 'react';
+import type { Product, CategoryId, Category } from '../../models/MenuModel';
 
 interface MenuSectionProps {
   activeCategory: CategoryId;
@@ -8,6 +8,7 @@ interface MenuSectionProps {
   setSearchQuery: (query: string) => void;
   filteredProducts: Product[];
   onAddDiyItem: (product: Product) => void;
+  categories: Category[];
 }
 
 export default function MenuSection({
@@ -16,8 +17,17 @@ export default function MenuSection({
   searchQuery,
   setSearchQuery,
   filteredProducts,
-  onAddDiyItem
+  onAddDiyItem,
+  categories
 }: MenuSectionProps) {
+  // Prepend virtual 'All Menu' category for customer filters
+  const fullCategories = useMemo(() => {
+    return [
+      { id: 'all', name: 'All Menu', iconName: 'menu' },
+      ...categories
+    ];
+  }, [categories]);
+
   // Helper to render inline SVG icons for categories
   const renderCategoryIcon = (iconName: string) => {
     switch (iconName) {
@@ -69,7 +79,7 @@ export default function MenuSection({
           
           {/* Categories Tab Bar (Desktop View) */}
           <div className="hidden md:flex gap-2 flex-wrap">
-            {CATEGORIES.map((category) => (
+            {fullCategories.map((category) => (
               <button
                 key={category.id}
                 type="button"
@@ -94,7 +104,7 @@ export default function MenuSection({
               value={activeCategory}
               onChange={(e) => setActiveCategory(e.target.value as CategoryId)}
             >
-              {CATEGORIES.map((category) => (
+              {fullCategories.map((category) => (
                 <option key={category.id} value={category.id}>
                   {category.name}
                 </option>
@@ -135,40 +145,43 @@ export default function MenuSection({
       {/* Products Grid */}
       {filteredProducts.length > 0 ? (
         <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-          {filteredProducts.map((product) => (
-            <div key={product.id} className="bg-white rounded-3xl border border-[#5B240B]/10 shadow-sm overflow-hidden flex flex-col hover:-translate-y-1.5 hover:shadow-xl transition-all duration-300">
-              <div className="relative aspect-[4/3] overflow-hidden bg-slate-50">
-                <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
-                {product.isPopular && (
-                  <span className="absolute top-4 left-4 bg-blue-600 text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-md">
-                    Popular Choice
+          {filteredProducts.map((product) => {
+            const catInfo = categories.find(c => c.id === product.category);
+            return (
+              <div key={product.id} className="bg-white rounded-3xl border border-[#5B240B]/10 shadow-sm overflow-hidden flex flex-col hover:-translate-y-1.5 hover:shadow-xl transition-all duration-300">
+                <div className="relative aspect-[4/3] overflow-hidden bg-slate-50">
+                  <img src={product.image} alt={product.name} className="w-full h-full object-cover" />
+                  {product.isPopular && (
+                    <span className="absolute top-4 left-4 bg-[#D65113] text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-md">
+                      Best Seller
+                    </span>
+                  )}
+                  <span className="absolute top-4 right-4 bg-slate-950/80 backdrop-blur-xs text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-md">
+                    {catInfo ? catInfo.name : product.category}
                   </span>
-                )}
-                <span className="absolute top-4 right-4 bg-slate-950/80 backdrop-blur-xs text-white text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-md">
-                  {product.category}
-                </span>
-              </div>
-              <div className="p-6 flex flex-col gap-3 grow">
-                <div className="flex justify-between items-start gap-4">
-                  <h3 className="text-[#5B240B] font-extrabold text-base m-0">{product.name}</h3>
-                  <span className="text-[#D65113] font-black text-base">₱{product.price}</span>
                 </div>
-                <p className="text-slate-500 text-xs leading-relaxed m-0 grow">{product.description}</p>
-                <div className="mt-3">
-                  <button
-                    type="button"
-                    className="w-full bg-[#5B240B] hover:bg-[#D65113] text-white flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-xs shadow-sm transition-all border-none cursor-pointer outline-none"
-                    onClick={() => onAddDiyItem(product)}
-                  >
-                    <span>Add to DIY Builder</span>
-                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                    </svg>
-                  </button>
+                <div className="p-6 flex flex-col gap-3 grow">
+                  <div className="flex justify-between items-start gap-4">
+                    <h3 className="text-[#5B240B] font-extrabold text-base m-0">{product.name}</h3>
+                    <span className="text-[#D65113] font-black text-base">₱{product.price}</span>
+                  </div>
+                  <p className="text-slate-500 text-xs leading-relaxed m-0 grow">{product.description}</p>
+                  <div className="mt-3">
+                    <button
+                      type="button"
+                      className="w-full bg-[#5B240B] hover:bg-[#D65113] text-white flex items-center justify-center gap-2 py-3 px-4 rounded-xl font-bold text-xs shadow-sm transition-all border-none cursor-pointer outline-none"
+                      onClick={() => onAddDiyItem(product)}
+                    >
+                      <span>Add to DIY Builder</span>
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="max-w-md mx-auto text-center py-12 flex flex-col items-center gap-4">
