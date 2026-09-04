@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import type { Product, Category, InventoryItem, StockMovement, ContactInfo, CustomerOrder } from '../../../models/MenuModel';
 import { formatCurrency, formatDateTime } from '../../../utils/formatters';
-import { downloadEInvoiceReceipt } from '../../../utils/receiptGenerator';
+import { downloadEInvoiceReceipt, parseQrPayloadToOrder } from '../../../utils/receiptGenerator';
 import QrCameraScannerModal from '../../../components/common/QrCameraScannerModal';
 
 interface PosOrderItem {
@@ -34,7 +34,8 @@ interface PosTerminalViewProps {
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   cookingFee?: number;
   orders?: CustomerOrder[];
-  lookupOrder?: (transactionNumber: string) => CustomerOrder | undefined;
+  lookupOrder?: (transactionNumber: string) => Promise<CustomerOrder | undefined> | CustomerOrder | undefined;
+  completeCustomerOrder?: (transactionNumber: string) => Promise<void> | void;
 }
 
 export default function PosTerminalView({
@@ -46,7 +47,8 @@ export default function PosTerminalView({
   showToast,
   cookingFee = 20,
   orders = [],
-  lookupOrder
+  lookupOrder,
+  completeCustomerOrder
 }: PosTerminalViewProps) {
   // Order ticket state
   const [orderItems, setOrderItems] = useState<PosOrderItem[]>([]);
@@ -56,6 +58,7 @@ export default function PosTerminalView({
   // Transaction Scan / Lookup state
   const [scanTxnInput, setScanTxnInput] = useState('');
   const [loadedTxn, setLoadedTxn] = useState<string | null>(null);
+  const [isLookingUp, setIsLookingUp] = useState(false);
 
   // Mobile active tab view ('catalog' vs 'ticket')
   const [mobileTab, setMobileTab] = useState<'catalog' | 'ticket'>('catalog');
@@ -162,16 +165,46 @@ export default function PosTerminalView({
   };
 
   // Load customer order via scanned QR code or typed transaction number
-  const handleLoadCustomerOrder = (txnInput?: string) => {
-    const code = (txnInput || scanTxnInput).trim().toUpperCase();
-    if (!code) {
+  const handleLoadCustomerOrder = async (txnInput?: string) => {
+    const rawInput = (txnInput || scanTxnInput).trim();
+    if (!rawInput) {
       showToast('Please enter or scan a transaction number.', 'error');
       return;
     }
 
-    const order = lookupOrder ? lookupOrder(code) : orders.find(o => o.transactionNumber.toUpperCase() === code);
+    setIsLookingUp(true);
+    let order: CustomerOrder | undefined;
+
+    // 1. Instant check: Was a self-contained QR JSON payload scanned?
+    if (rawInput.startsWith('{') || rawInput.includes('"txn"') || rawInput.includes('"bbk"')) {
+      try {
+        const parsed = JSON.parse(rawInput);
+        if (parsed.txn || parsed.transactionNumber) {
+          order = parseQrPayloadToOrder(parsed);
+        }
+      } catch (e) {
+        console.warn('Scanned payload is not valid JSON, falling back to database lookup:', e);
+      }
+    }
+
+    // 2. Fallback: Query local state and Supabase cloud for the TXN code
     if (!order) {
-      showToast(`Order with transaction number "${code}" was not found.`, 'error');
+      const code = rawInput.toUpperCase();
+      try {
+        if (lookupOrder) {
+          order = await lookupOrder(code);
+        } else {
+          order = orders.find(o => o.transactionNumber.toUpperCase() === code);
+        }
+      } catch (err) {
+        console.error('Error looking up order:', err);
+      }
+    }
+
+    setIsLookingUp(false);
+
+    if (!order) {
+      showToast(`Order with transaction number "${rawInput}" was not found.`, 'error');
       return;
     }
 
@@ -313,6 +346,10 @@ export default function PosTerminalView({
       changeDue: paymentMethod === 'Cash' ? changeDue : 0,
       paymentReference: paymentReference.trim() || undefined
     };
+
+    if (loadedTxn && completeCustomerOrder) {
+      completeCustomerOrder(loadedTxn);
+    }
 
     setCompletedSale(saleRecord);
     setIsCheckoutOpen(false);
@@ -470,9 +507,13 @@ export default function PosTerminalView({
 
                 <button
                   type="submit"
-                  className="px-3.5 sm:px-4 py-2 bg-[#D65113] hover:bg-[#5B240B] text-white rounded-xl text-xs font-bold transition-all border-none cursor-pointer outline-none shrink-0 shadow-sm"
+                  disabled={isLookingUp}
+                  className="px-3.5 sm:px-4 py-2 bg-[#D65113] hover:bg-[#5B240B] text-white rounded-xl text-xs font-bold transition-all border-none cursor-pointer outline-none shrink-0 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
                 >
-                  Load
+                  {isLookingUp && (
+                    <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                  )}
+                  <span>{isLookingUp ? 'Searching...' : 'Load'}</span>
                 </button>
               </form>
             </div>

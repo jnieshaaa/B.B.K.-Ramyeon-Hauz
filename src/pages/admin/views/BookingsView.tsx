@@ -104,9 +104,42 @@ export default function BookingsManager({
                     </div>
                   </td>
                   <td className="px-5 py-4 border-b border-slate-100 align-middle text-sm text-slate-600">
-                    <p className="text-[13px] text-slate-600 leading-relaxed whitespace-pre-line m-0">
-                      {inq.message || <span className="italic opacity-50">No message provided.</span>}
-                    </p>
+                    {inq.message?.startsWith('[BBK_ORDER_TXN:') ? (() => {
+                      try {
+                        const match = inq.message.match(/\[BBK_ORDER_TXN:([^\]]+)\]:(.+)$/s);
+                        if (match && match[2]) {
+                          const order = JSON.parse(match[2]);
+                          return (
+                            <div className="flex flex-col gap-1 p-2 bg-amber-50/60 rounded-xl border border-amber-200/60 text-xs">
+                              <div className="flex items-center gap-2">
+                                <span className="bg-[#D65113] text-white text-[10px] font-black px-2 py-0.5 rounded-md uppercase tracking-wider">
+                                  Order #{order.transactionNumber}
+                                </span>
+                                <span className="font-bold text-[#5B240B]">
+                                  {order.diningOption === 'dine-in' ? '🍜 DINE-IN' : '🛍️ TAKEOUT'}
+                                </span>
+                                <span className="text-slate-400">•</span>
+                                <span className="font-black text-slate-800">PHP {order.total}</span>
+                              </div>
+                              <p className="text-slate-600 m-0 font-medium text-[11px]">
+                                {order.items?.length || 0} item(s): {order.items?.map((it: any) => `${it.name} (x${it.quantity})`).join(', ')}
+                              </p>
+                            </div>
+                          );
+                        }
+                      } catch (e) {
+                        // Fallback to raw message
+                      }
+                      return (
+                        <p className="text-[13px] text-slate-600 leading-relaxed whitespace-pre-line m-0">
+                          {inq.message}
+                        </p>
+                      );
+                    })() : (
+                      <p className="text-[13px] text-slate-600 leading-relaxed whitespace-pre-line m-0">
+                        {inq.message || <span className="italic opacity-50">No message provided.</span>}
+                      </p>
+                    )}
                   </td>
                   <td className="px-5 py-4 border-b border-slate-100 align-middle text-sm text-slate-600">
                     {inq.status === 'pending' ? (

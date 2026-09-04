@@ -85,7 +85,8 @@ function App() {
     // Customer Orders State & POS Lookup Actions
     orders,
     submitCustomerOrder,
-    lookupOrder
+    lookupOrder,
+    completeCustomerOrder
   } = useMenuController();
 
   // Dynamic Contact Information State (backed by localStorage)
@@ -209,6 +210,7 @@ function App() {
           updateCookingFee={updateCookingFee}
           orders={orders}
           lookupOrder={lookupOrder}
+          completeCustomerOrder={completeCustomerOrder}
         />
         <Toast toast={toast} />
       </>

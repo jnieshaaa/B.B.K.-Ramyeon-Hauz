@@ -1,5 +1,60 @@
-import type { CartItem, DIYSelection } from '../models/MenuModel';
+import type { CartItem, CustomerOrder, DIYSelection } from '../models/MenuModel';
 import { drawQrCodeToCanvas } from './qrCode';
+
+/**
+ * Reconstructs a full CustomerOrder from a scanned QR payload (compact JSON).
+ */
+export function parseQrPayloadToOrder(payload: any): CustomerOrder {
+  return {
+    transactionNumber: payload.txn || payload.transactionNumber || `TXN-${Math.floor(100000 + Math.random() * 900000)}`,
+    createdAt: payload.cat || payload.createdAt || new Date().toISOString(),
+    diningOption: payload.opt || payload.diningOption || 'dine-in',
+    customerName: payload.name || payload.customerName,
+    cookingFee: payload.fee ?? payload.cookingFee ?? 0,
+    subtotal: payload.sub ?? payload.subtotal ?? 0,
+    total: payload.tot ?? payload.total ?? 0,
+    status: 'pending',
+    items: (payload.items || []).map((it: any) => ({
+      id: it.id || `item_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      name: it.n || it.name || 'Order Item',
+      type: (it.t === 'b' || it.type === 'bowl') ? 'bowl' : 'product',
+      price: it.p ?? it.price ?? 0,
+      quantity: it.q ?? it.quantity ?? 1,
+      bowlDetails: it.bd ? {
+        ramyeon: it.bd.r ? {
+          id: it.bd.r.id,
+          name: it.bd.r.n || it.bd.r.name,
+          price: it.bd.r.p ?? it.bd.r.price ?? 0,
+          description: '',
+          category: 'ramyeon',
+          image: ''
+        } : null,
+        toppings: (it.bd.tp || it.bd.toppings || []).map((t: any) => ({
+          product: {
+            id: t.id,
+            name: t.n || t.name,
+            price: t.p ?? t.price ?? 0,
+            description: '',
+            category: 'toppings',
+            image: ''
+          },
+          quantity: t.q ?? t.quantity ?? 1
+        })),
+        drinks: (it.bd.dk || it.bd.drinks || []).map((d: any) => ({
+          product: {
+            id: d.id,
+            name: d.n || d.name,
+            price: d.p ?? d.price ?? 0,
+            description: '',
+            category: 'drinks',
+            image: ''
+          },
+          quantity: d.q ?? d.quantity ?? 1
+        }))
+      } : undefined
+    }))
+  };
+}
 
 export interface ReceiptOptions {
   cart?: CartItem[];
@@ -239,11 +294,51 @@ export const downloadEInvoiceReceipt = async ({
   ctx.lineTo(width - 25, y);
   ctx.stroke();
 
-  // Render authentic scannable QR Code
-  const qrSize = 120;
+  // Render authentic scannable QR Code containing self-contained order payload
+  const qrSize = 130;
   const qrX = (width - qrSize) / 2;
   const qrY = y + 15;
-  await drawQrCodeToCanvas(ctx, txnNumber, qrX, qrY, qrSize);
+
+  // Build compact order payload for instantaneous, cross-origin POS scanning
+  const effectiveItemsList: CartItem[] = items.length > 0 ? items : (diySelection && (diySelection.ramyeon || (diySelection.toppings && diySelection.toppings.length > 0)) ? [{
+    id: `diy_${txnNumber}`,
+    name: 'DIY Ramyeon Bowl',
+    type: 'bowl' as const,
+    price: effectiveSubtotal,
+    quantity: 1,
+    bowlDetails: {
+      ramyeon: diySelection.ramyeon,
+      toppings: diySelection.toppings || [],
+      drinks: diySelection.drinks && diySelection.drinks.length > 0
+        ? diySelection.drinks
+        : (diySelection.drink ? [{ product: diySelection.drink, quantity: 1 }] : [])
+    }
+  }] : []);
+
+  const compactOrderPayload = {
+    bbk: 1,
+    txn: txnNumber,
+    opt: diningOption,
+    fee: cookingFee,
+    sub: effectiveSubtotal,
+    tot: grandTotal,
+    name: customerName,
+    items: effectiveItemsList.map((it) => ({
+      id: it.id,
+      n: it.name,
+      p: it.price,
+      q: it.quantity,
+      t: it.type === 'bowl' ? 'b' : 'p',
+      bd: it.bowlDetails ? {
+        r: it.bowlDetails.ramyeon ? { id: it.bowlDetails.ramyeon.id, n: it.bowlDetails.ramyeon.name, p: it.bowlDetails.ramyeon.price } : undefined,
+        tp: it.bowlDetails.toppings?.map((t) => ({ id: t.product.id, n: t.product.name, p: t.product.price, q: t.quantity })),
+        dk: it.bowlDetails.drinks?.map((d) => ({ id: d.product.id, n: d.product.name, p: d.product.price, q: d.quantity }))
+      } : undefined
+    }))
+  };
+
+  const qrData = JSON.stringify(compactOrderPayload);
+  await drawQrCodeToCanvas(ctx, qrData, qrX, qrY, qrSize);
 
   // Instructions for POS scanning
   y = qrY + qrSize + 18;

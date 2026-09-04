@@ -102,13 +102,87 @@ export function useMenuController() {
   }, [orders]);
 
   const submitCustomerOrder = (order: CustomerOrder): CustomerOrder => {
+    // 1. Update local state and localStorage cache
     setOrders(prev => [order, ...prev.filter(o => o.transactionNumber !== order.transactionNumber)]);
+
+    // 2. Synchronize to Supabase cloud (inquiries table) so any other device or origin (e.g. Vercel POS) can retrieve it
+    if (isSupabaseConfigured && supabase) {
+      const orderMessage = `[BBK_ORDER_TXN:${order.transactionNumber}]:${JSON.stringify(order)}`;
+      const inquiryPayload = {
+        name: order.customerName ? `${order.customerName} [TXN:${order.transactionNumber}]` : `Customer [TXN:${order.transactionNumber}]`,
+        phone: order.customerPhone || '09000000000',
+        email: order.customerEmail || null,
+        message: orderMessage,
+        status: 'pending',
+        timestamp: new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
+      };
+
+      (async () => {
+        try {
+          const { error } = await supabase.from('inquiries').insert(inquiryPayload);
+          if (error) {
+            console.warn('Could not sync customer order to Supabase cloud:', error);
+          } else {
+            console.log('Successfully synced order to Supabase cloud:', order.transactionNumber);
+          }
+        } catch (err) {
+          console.warn('Supabase cloud order sync network error:', err);
+        }
+      })();
+    }
+
     return order;
   };
 
-  const lookupOrder = (transactionNumber: string): CustomerOrder | undefined => {
+  const lookupOrder = async (transactionNumber: string): Promise<CustomerOrder | undefined> => {
     const cleanTxn = transactionNumber.trim().toUpperCase();
-    return orders.find(o => o.transactionNumber.toUpperCase() === cleanTxn);
+
+    // 1. Check local state / cache first
+    const localMatch = orders.find(o => o.transactionNumber.toUpperCase() === cleanTxn);
+    if (localMatch) return localMatch;
+
+    // 2. Query Supabase inquiries for the transaction tag across devices
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('inquiries')
+          .select('*')
+          .ilike('message', `%[BBK_ORDER_TXN:${cleanTxn}]%`)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (!error && data && data.length > 0) {
+          const rawMessage = data[0].message || '';
+          const match = rawMessage.match(/\[BBK_ORDER_TXN:[^\]]+\]:(.+)$/s);
+          if (match && match[1]) {
+            const cloudOrder = JSON.parse(match[1]) as CustomerOrder;
+            // Cache into local state
+            setOrders(prev => [cloudOrder, ...prev.filter(o => o.transactionNumber !== cloudOrder.transactionNumber)]);
+            return cloudOrder;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to query order from Supabase cloud:', err);
+      }
+    }
+
+    return undefined;
+  };
+
+  const completeCustomerOrder = async (transactionNumber: string) => {
+    const cleanTxn = transactionNumber.trim().toUpperCase();
+    setOrders(prev => prev.map(o => o.transactionNumber.toUpperCase() === cleanTxn ? { ...o, status: 'completed' as const } : o));
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase
+          .from('inquiries')
+          .update({ status: 'completed' })
+          .ilike('message', `%[BBK_ORDER_TXN:${cleanTxn}]%`);
+      } catch (err) {
+        console.warn('Failed to mark order as completed in cloud:', err);
+      }
+    }
   };
 
   // --- Categories State ---
@@ -283,20 +357,49 @@ export function useMenuController() {
       // Check if user is in administrative portal context
       const isAdminContext = window.location.search.includes('admin=true') || sessionStorage.getItem('bbk_admin_auth') === 'true';
 
-      // 4. Load inquiries (strictly restricted to administrative context)
+      // 4. Load inquiries and extract cloud synced customer orders
       if (isAdminContext) {
         const { data: dbInquiries } = await client.from('inquiries').select('*').order('created_at', { ascending: false });
         if (dbInquiries) {
-          const mappedInquiries: Inquiry[] = dbInquiries.map((i: any) => ({
-            id: i.id,
-            name: i.name,
-            phone: i.phone,
-            email: i.email || undefined,
-            message: i.message || '',
-            status: i.status as 'pending' | 'completed',
-            timestamp: i.timestamp
-          }));
+          const mappedInquiries: Inquiry[] = [];
+          const extractedOrders: CustomerOrder[] = [];
+
+          dbInquiries.forEach((i: any) => {
+            const msg = i.message || '';
+            const match = msg.match(/\[BBK_ORDER_TXN:[^\]]+\]:(.+)$/s);
+            if (match && match[1]) {
+              try {
+                const parsedOrder = JSON.parse(match[1]) as CustomerOrder;
+                extractedOrders.push(parsedOrder);
+              } catch (e) {
+                console.warn('Failed to parse order from inquiry message:', e);
+              }
+            }
+
+            mappedInquiries.push({
+              id: i.id,
+              name: i.name,
+              phone: i.phone,
+              email: i.email || undefined,
+              message: msg,
+              status: i.status as 'pending' | 'completed',
+              timestamp: i.timestamp
+            });
+          });
+
           setInquiries(mappedInquiries);
+
+          if (extractedOrders.length > 0) {
+            setOrders(prev => {
+              const map = new Map(prev.map(o => [o.transactionNumber.toUpperCase(), o]));
+              extractedOrders.forEach(o => {
+                if (!map.has(o.transactionNumber.toUpperCase())) {
+                  map.set(o.transactionNumber.toUpperCase(), o);
+                }
+              });
+              return Array.from(map.values());
+            });
+          }
         }
       }
 
@@ -1308,6 +1411,7 @@ export function useMenuController() {
     // Customer Orders State & POS Lookup Actions
     orders,
     submitCustomerOrder,
-    lookupOrder
+    lookupOrder,
+    completeCustomerOrder
   };
 }

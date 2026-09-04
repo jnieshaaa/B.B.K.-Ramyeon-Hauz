@@ -56,7 +56,8 @@ interface AdminDashboardProps {
 
   // Customer orders props
   orders?: CustomerOrder[];
-  lookupOrder?: (transactionNumber: string) => CustomerOrder | undefined;
+  lookupOrder?: (transactionNumber: string) => Promise<CustomerOrder | undefined> | CustomerOrder | undefined;
+  completeCustomerOrder?: (transactionNumber: string) => Promise<void> | void;
 }
 
 export default function AdminDashboard({
@@ -88,7 +89,8 @@ export default function AdminDashboard({
   cookingFee,
   updateCookingFee,
   orders,
-  lookupOrder
+  lookupOrder,
+  completeCustomerOrder
 }: AdminDashboardProps) {
   // Authentication State
   const [username, setUsername] = useState('');
@@ -311,6 +313,7 @@ export default function AdminDashboard({
                 cookingFee={cookingFee}
                 orders={orders}
                 lookupOrder={lookupOrder}
+                completeCustomerOrder={completeCustomerOrder}
               />
             )}
 
