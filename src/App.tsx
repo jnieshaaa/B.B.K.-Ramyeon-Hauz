@@ -52,6 +52,9 @@ function App() {
     addTopping,
     removeTopping,
     setDiyDrink,
+    addDiyDrink,
+    removeDiyDrink,
+    setEntireDiySelection,
     resetDiyBuilder,
     diyTotal,
 
@@ -61,7 +64,18 @@ function App() {
 
     // Maintenance Mode
     maintenanceMode,
-    updateMaintenanceMode
+    updateMaintenanceMode,
+
+    // Customer Cart States & Actions
+    cart,
+    addBowlToCart,
+    updateBowlInCart,
+    addProductToCart,
+    updateCartQuantity,
+    removeCartItem,
+    clearCart,
+    cartTotal,
+    cartItemCount
   } = useMenuController();
 
   // Dynamic Contact Information State (backed by localStorage)
@@ -145,8 +159,10 @@ function App() {
       addTopping(product);
       showToast(`Added "${product.name}" to your DIY toppings list.`, 'success');
     } else if (product.category === 'drinks') {
-      setDiyDrink(product);
-      showToast(`"${product.name}" selected as your chilled drink.`, 'success');
+      addDiyDrink(product);
+      showToast(`Added "${product.name}" to your DIY drinks.`, 'success');
+    } else {
+      addProductToCart(product);
     }
   };
 
@@ -216,7 +232,12 @@ function App() {
   return (
     <>
       {/* 1. Header (Navbar View) */}
-      <Header clientUser={clientUser} onLogout={() => handleSetClientUser(null)} />
+      <Header 
+        clientUser={clientUser} 
+        onLogout={() => handleSetClientUser(null)} 
+        cartItemCount={cartItemCount}
+        onCartClick={() => scrollToSection('diy-builder')}
+      />
 
       {/* Main content wrapper */}
       <main style={{ marginTop: '72px' }}>
@@ -265,6 +286,9 @@ function App() {
               addTopping={addTopping}
               removeTopping={removeTopping}
               setDiyDrink={setDiyDrink}
+              addDiyDrink={addDiyDrink}
+              removeDiyDrink={removeDiyDrink}
+              setEntireDiySelection={setEntireDiySelection}
               resetDiyBuilder={resetDiyBuilder}
               diyTotal={diyTotal}
               clientUser={clientUser}
@@ -272,6 +296,14 @@ function App() {
               contactInfo={contactInfo}
               products={products}
               inventory={inventory}
+              cart={cart}
+              addBowlToCart={addBowlToCart}
+              updateBowlInCart={updateBowlInCart}
+              updateCartQuantity={updateCartQuantity}
+              removeCartItem={removeCartItem}
+              clearCart={clearCart}
+              cartTotal={cartTotal}
+              cartItemCount={cartItemCount}
             />
           </>
         )}

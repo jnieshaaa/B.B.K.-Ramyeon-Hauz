@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ContactInfo, DIYSelection } from '../../models/MenuModel';
+import type { ContactInfo, DIYSelection, CartItem } from '../../models/MenuModel';
 import { supabase, isSupabaseConfigured } from '../../lib/supabaseClient';
 import { sha256 } from '../../utils/crypto';
 
@@ -7,8 +7,10 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   contactInfo: ContactInfo;
-  diySelection: DIYSelection;
-  diyTotal: number;
+  diySelection?: DIYSelection;
+  diyTotal?: number;
+  cart?: CartItem[];
+  cartTotal?: number;
   onAuthSuccess: (user: { email: string; name?: string; phone?: string }) => void;
   onProceedAsGuest: () => void;
 }
@@ -19,6 +21,8 @@ export default function AuthModal({
   contactInfo,
   diySelection,
   diyTotal,
+  cart,
+  cartTotal,
   onAuthSuccess,
   onProceedAsGuest
 }: AuthModalProps) {
@@ -166,12 +170,28 @@ export default function AuthModal({
     if (!ctx) return;
 
     const width = 450;
-    const toppingsCount = diySelection.toppings.length;
-    
+    const items = (cart && cart.length > 0) ? cart : [];
+    const effectiveTotal = cartTotal || diyTotal || 0;
+
     // Calculate height dynamically
-    let height = 340; 
-    if (toppingsCount > 0) height += 40 + toppingsCount * 28;
-    if (diySelection.drink) height += 45;
+    let height = 300;
+    if (items.length > 0) {
+      items.forEach(item => {
+        height += 50;
+        if (item.type === 'bowl' && item.bowlDetails) {
+          if (item.bowlDetails.toppings) height += item.bowlDetails.toppings.length * 22;
+          if (item.bowlDetails.drinks && item.bowlDetails.drinks.length > 0) {
+            height += item.bowlDetails.drinks.length * 22;
+          } else if (item.bowlDetails.drink) {
+            height += 25;
+          }
+        }
+      });
+    } else {
+      const toppingsCount = diySelection?.toppings?.length || 0;
+      const drinksCount = diySelection?.drinks?.length || (diySelection?.drink ? 1 : 0);
+      height = 340 + (toppingsCount > 0 ? 40 + toppingsCount * 28 : 0) + (drinksCount > 0 ? 40 + drinksCount * 28 : 0);
+    }
 
     canvas.width = width;
     canvas.height = height;
@@ -192,7 +212,7 @@ export default function AuthModal({
     ctx.fillText('B.B.K. RAMYEON HAUZ', width / 2, 45);
 
     ctx.font = 'bold 12px Courier New';
-    ctx.fillText('DIY CUSTOM RECEIPT (E-INVOICE)', width / 2, 70);
+    ctx.fillText('GROUP DINE-IN E-INVOICE', width / 2, 70);
     ctx.font = '10px Courier New';
     ctx.fillText('San Pablo City, Philippines', width / 2, 88);
     ctx.fillText(`Date: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`, width / 2, 105);
@@ -207,66 +227,86 @@ export default function AuthModal({
     ctx.stroke();
 
     let y = 145;
-    
-    // Base Ramyeon Section
-    ctx.textAlign = 'left';
-    ctx.font = 'bold 12px Courier New';
-    ctx.fillText('BASE RAMYEON NOODLE', 30, y);
-    
-    ctx.font = '13px Courier New';
-    const baseName = diySelection.ramyeon ? diySelection.ramyeon.name : 'None Selected';
-    const basePrice = diySelection.ramyeon ? `PHP ${diySelection.ramyeon.price}` : 'PHP 0';
-    ctx.fillText(baseName, 35, y + 22);
-    ctx.textAlign = 'right';
-    ctx.fillText(basePrice, width - 35, y + 22);
-    
-    y += 45;
 
-    // Toppings Section
-    if (toppingsCount > 0) {
-      ctx.setLineDash([2, 2]);
-      ctx.beginPath();
-      ctx.moveTo(30, y);
-      ctx.lineTo(width - 30, y);
-      ctx.stroke();
-      y += 18;
-
-      ctx.textAlign = 'left';
-      ctx.font = 'bold 12px Courier New';
-      ctx.fillText('TOPPINGS', 30, y);
-      
-      ctx.font = '13px Courier New';
-      diySelection.toppings.forEach(t => {
-        y += 24;
+    if (items.length > 0) {
+      items.forEach((item, index) => {
         ctx.textAlign = 'left';
-        ctx.fillText(`${t.product.name} (x${t.quantity})`, 35, y);
+        ctx.font = 'bold 12px Courier New';
+        ctx.fillText(`${index + 1}. ${item.name.toUpperCase()} (x${item.quantity})`, 30, y);
         ctx.textAlign = 'right';
-        ctx.fillText(`PHP ${t.product.price * t.quantity}`, width - 35, y);
+        ctx.fillText(`PHP ${item.price * item.quantity}`, width - 35, y);
+        y += 20;
+
+        if (item.type === 'bowl' && item.bowlDetails) {
+          ctx.font = '11px Courier New';
+          if (item.bowlDetails.ramyeon) {
+            ctx.textAlign = 'left';
+            ctx.fillText(`   Base: ${item.bowlDetails.ramyeon.name}`, 35, y);
+            y += 18;
+          }
+          if (item.bowlDetails.toppings && item.bowlDetails.toppings.length > 0) {
+            item.bowlDetails.toppings.forEach(t => {
+              ctx.textAlign = 'left';
+              ctx.fillText(`   + ${t.product.name} (x${t.quantity})`, 35, y);
+              y += 18;
+            });
+          }
+          if (item.bowlDetails.drinks && item.bowlDetails.drinks.length > 0) {
+            item.bowlDetails.drinks.forEach(d => {
+              ctx.textAlign = 'left';
+              ctx.fillText(`   + Drink: ${d.product.name} (x${d.quantity})`, 35, y);
+              y += 18;
+            });
+          } else if (item.bowlDetails.drink) {
+            ctx.textAlign = 'left';
+            ctx.fillText(`   + Drink: ${item.bowlDetails.drink.name}`, 35, y);
+            y += 18;
+          }
+        }
+        y += 8;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(30, y);
+        ctx.lineTo(width - 30, y);
+        ctx.stroke();
+        y += 15;
       });
-      y += 22;
-    }
-
-    // Drinks Section
-    if (diySelection.drink) {
-      ctx.setLineDash([2, 2]);
-      ctx.beginPath();
-      ctx.moveTo(30, y);
-      ctx.lineTo(width - 30, y);
-      ctx.stroke();
-      y += 18;
-
+    } else if (diySelection) {
+      // Single bowl fallback
       ctx.textAlign = 'left';
       ctx.font = 'bold 12px Courier New';
-      ctx.fillText('BEVERAGE', 30, y);
-      
+      ctx.fillText('BASE RAMYEON NOODLE', 30, y);
       ctx.font = '13px Courier New';
-      const drinkName = diySelection.drink.name;
-      const drinkPrice = `PHP ${diySelection.drink.price}`;
-      ctx.fillText(drinkName, 35, y + 22);
+      ctx.fillText(diySelection.ramyeon ? diySelection.ramyeon.name : 'None Selected', 35, y + 22);
       ctx.textAlign = 'right';
-      ctx.fillText(drinkPrice, width - 35, y + 22);
-      
-      y += 40;
+      ctx.fillText(diySelection.ramyeon ? `PHP ${diySelection.ramyeon.price}` : 'PHP 0', width - 35, y + 22);
+      y += 45;
+
+      if (diySelection.toppings && diySelection.toppings.length > 0) {
+        diySelection.toppings.forEach(t => {
+          y += 24;
+          ctx.textAlign = 'left';
+          ctx.fillText(`${t.product.name} (x${t.quantity})`, 35, y);
+          ctx.textAlign = 'right';
+          ctx.fillText(`PHP ${t.product.price * t.quantity}`, width - 35, y);
+        });
+        y += 22;
+      }
+
+      const fallbackDrinks = diySelection.drinks && diySelection.drinks.length > 0
+        ? diySelection.drinks
+        : (diySelection.drink ? [{ product: diySelection.drink, quantity: 1 }] : []);
+
+      if (fallbackDrinks.length > 0) {
+        fallbackDrinks.forEach(d => {
+          y += 24;
+          ctx.textAlign = 'left';
+          ctx.fillText(`🥤 ${d.product.name} (x${d.quantity})`, 35, y);
+          ctx.textAlign = 'right';
+          ctx.fillText(`PHP ${d.product.price * d.quantity}`, width - 35, y);
+        });
+        y += 22;
+      }
     }
 
     // Total Section
@@ -279,10 +319,10 @@ export default function AuthModal({
 
     ctx.textAlign = 'left';
     ctx.font = 'bold 14px Courier New';
-    ctx.fillText('ESTIMATED TOTAL', 30, y);
+    ctx.fillText('GRAND TOTAL', 30, y);
     ctx.textAlign = 'right';
     ctx.font = 'bold 16px Courier New';
-    ctx.fillText(`PHP ${diyTotal}`, width - 35, y);
+    ctx.fillText(`PHP ${effectiveTotal}`, width - 35, y);
 
     // Footer Section
     y += 25;
@@ -303,7 +343,7 @@ export default function AuthModal({
     const dataUrl = canvas.toDataURL('image/png');
     const link = document.createElement('a');
     link.href = dataUrl;
-    link.download = `bbk-diy-recipe-${Date.now()}.png`;
+    link.download = `bbk-group-order-${Date.now()}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

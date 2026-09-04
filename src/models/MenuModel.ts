@@ -19,7 +19,23 @@ export interface Category {
 export interface DIYSelection {
   ramyeon: Product | null;
   toppings: { product: Product; quantity: number }[];
-  drink: Product | null;
+  drinks: { product: Product; quantity: number }[];
+  drink?: Product | null;
+}
+
+export interface CartItem {
+  id: string;
+  name: string;
+  type: 'bowl' | 'product';
+  price: number;
+  quantity: number;
+  bowlDetails?: {
+    ramyeon: Product | null;
+    toppings: { product: Product; quantity: number }[];
+    drinks?: { product: Product; quantity: number }[];
+    drink?: Product | null;
+  };
+  product?: Product;
 }
 
 export interface Inquiry {

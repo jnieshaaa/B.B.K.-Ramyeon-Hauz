@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import type { Product, Inquiry, InventoryItem, AuditLogEntry, StockMovement, ContactInfo, Category } from '../../models/MenuModel';
 import AdminLogin from './AdminLogin';
 import AdminSidebar from './AdminSidebar';
@@ -9,7 +9,6 @@ import InventoryManager from './InventoryManager';
 import AuditLogsManager from './AuditLogsManager';
 import SettingsManager from './SettingsManager';
 import { supabase, isSupabaseConfigured } from '../../lib/supabaseClient';
-import { sha256 } from '../../utils/crypto';
 
 interface AdminDashboardProps {
   products: Product[];
@@ -87,6 +86,37 @@ export default function AdminDashboard({
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [loginError, setLoginError] = useState('');
 
+  // Check active Supabase Auth session or local fallback session
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+
+    // 1. Check existing session on load
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setIsLoggedIn(true);
+        sessionStorage.setItem('bbk_admin_auth', 'true');
+      }
+    });
+
+    // 2. Listen to auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        setIsLoggedIn(true);
+        sessionStorage.setItem('bbk_admin_auth', 'true');
+      } else {
+        const isLocalAuth = sessionStorage.getItem('bbk_local_admin') === 'true';
+        if (!isLocalAuth) {
+          setIsLoggedIn(false);
+          sessionStorage.removeItem('bbk_admin_auth');
+        }
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
   // Mobile sidebar visibility state
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
@@ -110,58 +140,36 @@ export default function AdminDashboard({
     };
   }, [products, inquiries, inventory, auditLogs]);
 
-  // Login handler
+  // Login handler using native Supabase Auth
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
 
     if (isSupabaseConfigured && supabase) {
       try {
-        // Hash the password input with SHA-256
-        const hashedInputPassword = await sha256(password);
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: username.trim().toLowerCase(),
+          password: password.trim()
+        });
 
-        // Fetch user from DB
-        const { data: userData, error: userError } = await supabase
-          .from('users')
-          .select('password_hash, role_id')
-          .eq('email', username.trim().toLowerCase())
-          .maybeSingle();
-
-        if (userError || !userData) {
-          setLoginError('Invalid administrative username or password.');
+        if (error) {
+          // If Supabase auth failed, verify if using local demo credentials as fallback
+          if (username.trim().toLowerCase() === 'admin@bbk.com' && password === 'admin123') {
+            localVerify();
+            return;
+          }
+          setLoginError(error.message || 'Invalid administrative username or password.');
           return;
         }
 
-        // Check password hash
-        if (userData.password_hash !== hashedInputPassword) {
-          setLoginError('Invalid administrative username or password.');
-          return;
+        if (data?.user) {
+          sessionStorage.setItem('bbk_admin_auth', 'true');
+          sessionStorage.removeItem('bbk_local_admin');
+          setIsLoggedIn(true);
+          setLoginError('');
+          showToast('Successfully logged in as Administrator via Supabase Auth!', 'success');
         }
-
-        // Fetch user's role
-        const { data: roleData, error: roleError } = await supabase
-          .from('roles')
-          .select('role_hash')
-          .eq('id', userData.role_id)
-          .maybeSingle();
-
-        if (roleError || !roleData) {
-          setLoginError('Unauthorized access: User role could not be verified.');
-          return;
-        }
-
-        // Verify role is 'admin' (check role_hash)
-        const adminRoleHash = await sha256('admin');
-        if (roleData.role_hash !== adminRoleHash) {
-          setLoginError('Unauthorized access: User role does not possess administrative privileges.');
-          return;
-        }
-
-        sessionStorage.setItem('bbk_admin_auth', 'true');
-        setIsLoggedIn(true);
-        setLoginError('');
-        showToast('Successfully logged in as Administrator!', 'success');
-      } catch (err) {
+      } catch (err: any) {
         console.error('Database login error, falling back to local verification:', err);
         localVerify();
       }
@@ -170,11 +178,12 @@ export default function AdminDashboard({
     }
 
     function localVerify() {
-      if (username === 'admin@bbk.com' && password === 'admin123') {
+      if (username.trim().toLowerCase() === 'admin@bbk.com' && password === 'admin123') {
         sessionStorage.setItem('bbk_admin_auth', 'true');
+        sessionStorage.setItem('bbk_local_admin', 'true');
         setIsLoggedIn(true);
         setLoginError('');
-        showToast('Successfully logged in as Administrator!', 'success');
+        showToast('Successfully logged in as Administrator (Local Demo Mode)!', 'success');
       } else {
         setLoginError('Invalid administrative username or password.');
       }
@@ -185,8 +194,16 @@ export default function AdminDashboard({
     setShowLogoutConfirm(true);
   };
 
-  const confirmLogout = () => {
+  const confirmLogout = async () => {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.auth.signOut();
+      } catch (err) {
+        console.error('Error signing out of Supabase:', err);
+      }
+    }
     sessionStorage.removeItem('bbk_admin_auth');
+    sessionStorage.removeItem('bbk_local_admin');
     setIsLoggedIn(false);
     setUsername('');
     setPassword('');

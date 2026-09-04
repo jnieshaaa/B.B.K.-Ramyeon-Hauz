@@ -62,6 +62,78 @@ export default function CatalogManager({
   const [prodIsPopular, setProdIsPopular] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
+  // Media Library state for image reuse
+  const [isImagePickerModalOpen, setIsImagePickerModalOpen] = useState(false);
+  const [isMediaLibraryOpen, setIsMediaLibraryOpen] = useState(false);
+  const [libraryImages, setLibraryImages] = useState<Array<{ url: string; name: string; source: 'storage' | 'catalog' }>>([]);
+  const [isLoadingLibrary, setIsLoadingLibrary] = useState(false);
+  const [librarySearch, setLibrarySearch] = useState('');
+  const [selectedLibraryUrl, setSelectedLibraryUrl] = useState('');
+
+  const loadLibraryImages = async () => {
+    setIsLoadingLibrary(true);
+    const imageMap = new Map<string, { url: string; name: string; source: 'storage' | 'catalog' }>();
+
+    // 1. Collect images already used across catalog products
+    products.forEach((p) => {
+      if (p.image && !imageMap.has(p.image)) {
+        imageMap.set(p.image, {
+          url: p.image,
+          name: p.name,
+          source: 'catalog'
+        });
+      }
+    });
+
+    // 2. Fetch images uploaded to Supabase Storage bucket 'products/uploads'
+    const client = supabase;
+    if (isSupabaseConfigured && client) {
+      try {
+        const { data, error } = await client.storage
+          .from('products')
+          .list('uploads', {
+            limit: 100,
+            sortBy: { column: 'created_at', order: 'desc' }
+          });
+
+        if (!error && data) {
+          data.forEach((file) => {
+            if (file.name && !file.name.startsWith('.')) {
+              const { data: { publicUrl } } = client.storage
+                .from('products')
+                .getPublicUrl(`uploads/${file.name}`);
+
+              if (publicUrl && !imageMap.has(publicUrl)) {
+                const cleanName = file.name
+                  .replace(/^product-\d+[-_.]*/i, '')
+                  .replace(/[-_]/g, ' ') || file.name;
+
+                imageMap.set(publicUrl, {
+                  url: publicUrl,
+                  name: cleanName,
+                  source: 'storage'
+                });
+              }
+            }
+          });
+        }
+      } catch (err) {
+        console.error('Failed to list images from Supabase Storage:', err);
+      }
+    }
+
+    setLibraryImages(Array.from(imageMap.values()));
+    setIsLoadingLibrary(false);
+  };
+
+  const filteredLibraryImages = useMemo(() => {
+    if (!librarySearch.trim()) return libraryImages;
+    const q = librarySearch.toLowerCase().trim();
+    return libraryImages.filter(img => 
+      img.name.toLowerCase().includes(q) || img.url.toLowerCase().includes(q)
+    );
+  }, [libraryImages, librarySearch]);
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -95,6 +167,10 @@ export default function CatalogManager({
         .getPublicUrl(filePath);
 
       setProdImage(publicUrl);
+      setLibraryImages(prev => [
+        { url: publicUrl, name: file.name, source: 'storage' },
+        ...prev.filter(item => item.url !== publicUrl)
+      ]);
     } catch (err: any) {
       console.error('Failed to upload image to Supabase:', err);
       alert(`Upload failed: ${err.message || err.error_description || 'Please make sure a public bucket named "products" exists in your Supabase console storage section.'}`);
@@ -481,7 +557,7 @@ export default function CatalogManager({
                   <span className="text-xs font-black uppercase tracking-wider text-slate-600">Product Image *</span>
 
                   <div
-                    onClick={() => document.getElementById('form-product-upload')?.click()}
+                    onClick={() => setIsImagePickerModalOpen(true)}
                     className="w-full aspect-square bg-slate-50 hover:bg-slate-100/50 border-2 border-dashed border-slate-200 hover:border-[#D65113] rounded-3xl overflow-hidden flex flex-col items-center justify-center relative cursor-pointer group transition-all"
                   >
                     {prodImage ? (
@@ -489,7 +565,7 @@ export default function CatalogManager({
                         <img src={prodImage} alt="Product Preview" className="w-full h-full object-cover" />
                         <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all duration-300">
                           <span className="bg-white/90 text-slate-900 text-xs font-bold px-3 py-1.5 rounded-xl shadow-sm">
-                            Change Image
+                            Change Photo
                           </span>
                         </div>
                       </>
@@ -498,8 +574,8 @@ export default function CatalogManager({
                         <svg className="w-8 h-8 text-slate-400 group-hover:text-[#D65113] transition-colors" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v6m3-3H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                         </svg>
-                        <span className="text-xs font-bold text-slate-600 mt-2">Click to Upload File</span>
-                        <span className="text-[10px] text-slate-400 mt-1">PNG, JPG, or WEBP</span>
+                        <span className="text-xs font-bold text-slate-700 mt-2">Click to Set Photo</span>
+                        <span className="text-[10px] text-slate-400 mt-1">Upload from Device or Reuse Existing</span>
                       </div>
                     )}
 
@@ -521,8 +597,36 @@ export default function CatalogManager({
                     disabled={isUploading}
                   />
 
+                  {/* Reuse Existing Image Button */}
+                  <div className="flex flex-col gap-1.5 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedLibraryUrl(prodImage);
+                        setIsMediaLibraryOpen(true);
+                        loadLibraryImages();
+                      }}
+                      className="w-full flex items-center justify-center gap-2 py-2 px-3 bg-blue-50 hover:bg-blue-100/80 text-blue-700 text-xs font-bold rounded-xl border border-blue-200 transition-colors cursor-pointer outline-none"
+                    >
+                      <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      Choose from Uploaded / Library
+                    </button>
+
+                    {prodImage && (
+                      <button
+                        type="button"
+                        onClick={() => setProdImage('')}
+                        className="text-[11px] text-red-500 hover:text-red-700 font-bold self-center cursor-pointer bg-transparent border-none py-0.5 outline-none transition-colors"
+                      >
+                        Remove Selected Image
+                      </button>
+                    )}
+                  </div>
+
                   {/* Or Paste Direct Link */}
-                  <div className="flex flex-col gap-1 mt-2">
+                  <div className="flex flex-col gap-1 mt-1">
                     <label htmlFor="form-prod-image-url" className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Or Paste Image URL Link</label>
                     <input
                       type="url"
@@ -694,6 +798,262 @@ export default function CatalogManager({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Choice Modal: Upload from device or choose from media library */}
+      {isImagePickerModalOpen && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-[2600] p-4 box-border animate-fadeIn">
+          <div className="bg-white rounded-3xl w-full max-w-[440px] shadow-2xl overflow-hidden font-sans border border-slate-200 flex flex-col">
+            {/* Header */}
+            <div className="px-6 py-4 bg-slate-900 text-white flex justify-between items-center shrink-0">
+              <h3 className="text-sm font-extrabold m-0">Select Photo Source</h3>
+              <button
+                type="button"
+                className="text-xl text-white/80 hover:text-white bg-transparent border-none cursor-pointer outline-none font-bold"
+                onClick={() => setIsImagePickerModalOpen(false)}
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Options */}
+            <div className="p-6 flex flex-col gap-3">
+              <p className="text-xs text-slate-500 m-0 mb-1">
+                How would you like to select the photo for this menu item?
+              </p>
+
+              {/* Option 1: Upload from device */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsImagePickerModalOpen(false);
+                  document.getElementById('form-product-upload')?.click();
+                }}
+                className="flex items-center gap-3.5 p-3.5 bg-slate-50 hover:bg-orange-50 border border-slate-200 hover:border-[#D65113] rounded-2xl cursor-pointer text-left transition-all group"
+              >
+                <div className="w-10 h-10 rounded-xl bg-orange-100 text-[#D65113] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-xs font-bold text-slate-900 group-hover:text-[#D65113]">Upload from Device</span>
+                  <span className="text-[10px] text-slate-400">Choose PNG, JPG, or WEBP from your computer</span>
+                </div>
+              </button>
+
+              {/* Option 2: Choose from Media Library / Existing */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsImagePickerModalOpen(false);
+                  setSelectedLibraryUrl(prodImage);
+                  setIsMediaLibraryOpen(true);
+                  loadLibraryImages();
+                }}
+                className="flex items-center gap-3.5 p-3.5 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-500 rounded-2xl cursor-pointer text-left transition-all group"
+              >
+                <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-xs font-bold text-slate-900 group-hover:text-blue-600">Choose from Media Library</span>
+                  <span className="text-[10px] text-slate-400">Reuse previously uploaded photo to avoid duplicates</span>
+                </div>
+              </button>
+
+              {/* Option 3: Remove if exists */}
+              {prodImage && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProdImage('');
+                    setIsImagePickerModalOpen(false);
+                  }}
+                  className="flex items-center gap-2 p-2.5 bg-red-50 hover:bg-red-100/70 border border-red-200 rounded-xl cursor-pointer text-left transition-all text-red-600 text-xs font-bold mt-1"
+                >
+                  <svg className="w-4 h-4 ml-1 text-red-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  Remove Current Photo
+                </button>
+              )}
+            </div>
+
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsImagePickerModalOpen(false)}
+                className="text-xs font-bold text-slate-600 hover:text-slate-900 bg-transparent border-none px-4 py-1.5 cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Media Library Modal for Image Reuse */}
+      {isMediaLibraryOpen && (
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center z-[2600] p-4 box-border animate-fadeIn">
+          <div className="bg-white rounded-3xl w-full max-w-[780px] shadow-2xl overflow-hidden font-sans border border-slate-200 flex flex-col max-h-[85vh]">
+            {/* Header */}
+            <div className="px-6 py-4 bg-slate-900 text-white flex justify-between items-center shrink-0">
+              <div>
+                <h3 className="text-base font-extrabold m-0 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  Media Library & Uploaded Images
+                </h3>
+                <p className="text-xs text-slate-400 m-0 mt-0.5">
+                  Select any previously uploaded or existing product image to reuse it without uploading duplicates.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="text-2xl text-white/80 hover:text-white bg-transparent border-none cursor-pointer outline-none font-bold ml-4"
+                onClick={() => setIsMediaLibraryOpen(false)}
+              >
+                &times;
+              </button>
+            </div>
+
+            {/* Toolbar: Search + Refresh + Counter */}
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center gap-3 shrink-0">
+              <div className="relative flex-1">
+                <svg className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search images by name..."
+                  value={librarySearch}
+                  onChange={(e) => setLibrarySearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:border-[#D65113] outline-none"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={loadLibraryImages}
+                disabled={isLoadingLibrary}
+                className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition-colors cursor-pointer outline-none"
+                title="Refresh Images"
+              >
+                <svg className={`w-3.5 h-3.5 ${isLoadingLibrary ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </button>
+              <span className="text-xs font-bold text-slate-500 bg-slate-200/60 px-2.5 py-1 rounded-full whitespace-nowrap">
+                {filteredLibraryImages.length} images
+              </span>
+            </div>
+
+            {/* Images Grid Content */}
+            <div className="p-6 overflow-y-auto max-h-[50vh] flex-1">
+              {isLoadingLibrary ? (
+                <div className="py-16 flex flex-col items-center justify-center gap-3 text-slate-400">
+                  <div className="w-8 h-8 border-3 border-[#D65113] border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-xs font-bold text-slate-600">Loading uploaded media files...</span>
+                </div>
+              ) : filteredLibraryImages.length === 0 ? (
+                <div className="py-16 text-center text-slate-400 flex flex-col items-center gap-2">
+                  <svg className="w-12 h-12 text-slate-300" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  <p className="text-sm font-bold text-slate-600 m-0">No images found</p>
+                  <p className="text-xs text-slate-400 m-0">
+                    {librarySearch ? 'No images matched your search filter.' : 'Upload an image first to build your reusable library.'}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+                  {filteredLibraryImages.map((img, idx) => {
+                    const isSelected = selectedLibraryUrl === img.url;
+                    return (
+                      <div
+                        key={img.url + idx}
+                        onClick={() => setSelectedLibraryUrl(img.url)}
+                        onDoubleClick={() => {
+                          setProdImage(img.url);
+                          setIsMediaLibraryOpen(false);
+                        }}
+                        className={`group relative rounded-2xl overflow-hidden border-2 cursor-pointer transition-all duration-200 bg-slate-100 flex flex-col ${
+                          isSelected
+                            ? 'border-[#D65113] ring-2 ring-[#D65113]/30 shadow-md'
+                            : 'border-slate-200 hover:border-slate-300 hover:shadow-xs'
+                        }`}
+                      >
+                        {/* Square thumbnail */}
+                        <div className="aspect-square w-full relative overflow-hidden bg-slate-200">
+                          <img
+                            src={img.url}
+                            alt={img.name}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            loading="lazy"
+                          />
+                          {isSelected && (
+                            <div className="absolute top-2 right-2 bg-[#D65113] text-white w-6 h-6 rounded-full flex items-center justify-center shadow-md">
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                              </svg>
+                            </div>
+                          )}
+                          <div className="absolute bottom-1.5 left-1.5">
+                            <span className="text-[9px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-slate-900/80 text-white backdrop-blur-xs">
+                              {img.source === 'storage' ? 'Uploaded' : 'Catalog'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Image label */}
+                        <div className="p-2 bg-white text-[11px] font-bold text-slate-700 truncate" title={img.name}>
+                          {img.name}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center shrink-0">
+              <span className="text-xs text-slate-500 font-medium hidden sm:inline">
+                Tip: Click an image to select, or double-click to select and apply immediately.
+              </span>
+              <div className="flex gap-2 ml-auto">
+                <button
+                  type="button"
+                  onClick={() => setIsMediaLibraryOpen(false)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-800 px-4 py-2 rounded-xl font-bold text-xs cursor-pointer border-none transition-all outline-none"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!selectedLibraryUrl}
+                  onClick={() => {
+                    if (selectedLibraryUrl) {
+                      setProdImage(selectedLibraryUrl);
+                      setIsMediaLibraryOpen(false);
+                    }
+                  }}
+                  className={`px-5 py-2 rounded-xl font-bold text-xs cursor-pointer border-none transition-all outline-none shadow-md ${
+                    selectedLibraryUrl
+                      ? 'bg-[#D65113] hover:bg-slate-800 text-white shadow-[#D65113]/20'
+                      : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                  }`}
+                >
+                  Use Selected Image
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -207,7 +207,13 @@ export default function MenuSection({
                       onClick={() => !isOutOfStock && onAddDiyItem(product)}
                       disabled={isOutOfStock}
                     >
-                      <span>{isOutOfStock ? 'Sold Out' : 'Add to DIY Builder'}</span>
+                      <span>
+                        {isOutOfStock
+                          ? 'Sold Out'
+                          : (product.category === 'ramyeon' || product.category === 'toppings' || product.category === 'drinks'
+                              ? 'Add to DIY Builder'
+                              : 'Add to Order')}
+                      </span>
                       {!isOutOfStock && (
                         <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />

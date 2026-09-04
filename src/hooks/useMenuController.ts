@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect } from 'react';
-import type { Product, CategoryId, DIYSelection, Inquiry, InventoryItem, AuditLogEntry, StockMovement, Category } from '../models/MenuModel';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import type { Product, CategoryId, DIYSelection, Inquiry, InventoryItem, AuditLogEntry, StockMovement, Category, CartItem } from '../models/MenuModel';
 import { PRODUCTS, CATEGORIES } from '../data/menuData';
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 
@@ -91,6 +91,7 @@ export function useMenuController() {
   const [diySelection, setDiySelection] = useState<DIYSelection>({
     ramyeon: null,
     toppings: [],
+    drinks: [],
     drink: null
   });
 
@@ -174,118 +175,133 @@ export function useMenuController() {
     localStorage.setItem('bbk_menu_inquiries', JSON.stringify(inquiries));
   }, [inquiries]);
 
-  // --- Supabase Live Load Effect ---
-  useEffect(() => {
+  // --- Supabase Live Load Function ---
+  const loadSupabaseData = useCallback(async () => {
     const client = supabase;
     if (!isSupabaseConfigured || !client) return;
 
-    const loadSupabaseData = async () => {
-      try {
-        // 1. Load categories
-        const { data: dbCategories } = await client.from('categories').select('*').order('created_at', { ascending: true });
-        if (dbCategories && dbCategories.length > 0) {
-          const mappedCategories: Category[] = dbCategories.map((c: any) => ({
-            id: c.id,
-            name: c.name,
-            iconName: c.icon_name || 'noodle'
-          }));
-          setCategories(mappedCategories);
-        }
-
-        // 2. Load products
-        const { data: dbProducts } = await client.from('products').select('*');
-        if (dbProducts) {
-          const mappedProducts: Product[] = dbProducts.map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            price: Number(p.price),
-            description: p.description || '',
-            category: p.category,
-            image: p.image,
-            isPopular: !!p.is_popular
-          }));
-          setProducts(mappedProducts);
-        }
-
-        // 3. Load inquiries
-        const { data: dbInquiries } = await client.from('inquiries').select('*').order('created_at', { ascending: false });
-        if (dbInquiries) {
-          const mappedInquiries: Inquiry[] = dbInquiries.map((i: any) => ({
-            id: i.id,
-            name: i.name,
-            phone: i.phone,
-            email: i.email || undefined,
-            message: i.message || '',
-            status: i.status as 'pending' | 'completed',
-            timestamp: i.timestamp
-          }));
-          setInquiries(mappedInquiries);
-        }
-
-        // 4. Load inventory
-        const { data: dbInventory } = await client.from('inventory').select('*');
-        if (dbInventory) {
-          const mappedInventory: InventoryItem[] = dbInventory.map((i: any) => ({
-            id: i.id,
-            name: i.name,
-            currentStock: i.current_stock,
-            minStockLevel: i.min_stock_level,
-            unit: i.unit,
-            category: i.category,
-            lastAudited: i.last_audited || undefined
-          }));
-          setInventory(mappedInventory);
-
-          // 5. Load stock movements (depends on inventory item names)
-          const { data: dbMovements } = await client.from('stock_movements').select('*').order('created_at', { ascending: false });
-          if (dbMovements) {
-            const mappedMovements: StockMovement[] = dbMovements.map((m: any) => {
-              const invItem = dbInventory.find(i => i.id === m.item_id);
-              return {
-                id: m.id,
-                itemId: m.item_id,
-                itemName: invItem ? invItem.name : 'Unknown Item',
-                date: m.date,
-                displayedQty: m.displayed_qty,
-                soldQty: m.sold_qty
-              };
-            });
-            setStockMovements(mappedMovements);
-          }
-
-          // 6. Load audit logs (depends on inventory item names)
-          const { data: dbLogs } = await client.from('audit_log_entries').select('*').order('created_at', { ascending: false });
-          if (dbLogs) {
-            const mappedLogs: AuditLogEntry[] = dbLogs.map((l: any) => {
-              const invItem = dbInventory.find(i => i.id === l.item_id);
-              return {
-                id: l.id,
-                itemId: l.item_id,
-                itemName: invItem ? invItem.name : 'Unknown Item',
-                auditDate: l.audit_date,
-                physicalCount: l.physical_count,
-                recordedCount: l.recorded_count,
-                discrepancy: l.discrepancy,
-                auditedBy: l.audited_by,
-                notes: l.notes || undefined
-              };
-            });
-            setAuditLogs(mappedLogs);
-          }
-
-          // 7. Load store settings (like maintenance mode)
-          const { data: dbSettings } = await client.from('store_settings').select('*').eq('key', 'maintenance_mode').maybeSingle();
-          if (dbSettings && dbSettings.value) {
-            setMaintenanceMode(dbSettings.value as any);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to sync databases from Supabase:', err);
+    try {
+      // 1. Load categories
+      const { data: dbCategories } = await client.from('categories').select('*').order('created_at', { ascending: true });
+      if (dbCategories && dbCategories.length > 0) {
+        const mappedCategories: Category[] = dbCategories.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          iconName: c.icon_name || 'noodle'
+        }));
+        setCategories(mappedCategories);
       }
-    };
 
-    loadSupabaseData();
+      // 2. Load products
+      const { data: dbProducts } = await client.from('products').select('*');
+      if (dbProducts) {
+        const mappedProducts: Product[] = dbProducts.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          price: Number(p.price),
+          description: p.description || '',
+          category: p.category,
+          image: p.image,
+          isPopular: !!p.is_popular
+        }));
+        setProducts(mappedProducts);
+      }
+
+      // 3. Load store settings (like maintenance mode)
+      const { data: dbSettings } = await client.from('store_settings').select('*').eq('key', 'maintenance_mode').maybeSingle();
+      if (dbSettings && dbSettings.value) {
+        setMaintenanceMode(dbSettings.value as any);
+      }
+
+      // 4. Load inquiries (visible if authenticated admin)
+      const { data: dbInquiries } = await client.from('inquiries').select('*').order('created_at', { ascending: false });
+      if (dbInquiries) {
+        const mappedInquiries: Inquiry[] = dbInquiries.map((i: any) => ({
+          id: i.id,
+          name: i.name,
+          phone: i.phone,
+          email: i.email || undefined,
+          message: i.message || '',
+          status: i.status as 'pending' | 'completed',
+          timestamp: i.timestamp
+        }));
+        setInquiries(mappedInquiries);
+      }
+
+      // 5. Load inventory (visible if authenticated admin)
+      const { data: dbInventory } = await client.from('inventory').select('*');
+      if (dbInventory && dbInventory.length > 0) {
+        const mappedInventory: InventoryItem[] = dbInventory.map((i: any) => ({
+          id: i.id,
+          name: i.name,
+          currentStock: i.current_stock,
+          minStockLevel: i.min_stock_level,
+          unit: i.unit,
+          category: i.category,
+          lastAudited: i.last_audited || undefined
+        }));
+        setInventory(mappedInventory);
+
+        // 6. Load stock movements (depends on inventory item names)
+        const { data: dbMovements } = await client.from('stock_movements').select('*').order('created_at', { ascending: false });
+        if (dbMovements) {
+          const mappedMovements: StockMovement[] = dbMovements.map((m: any) => {
+            const invItem = dbInventory.find(i => i.id === m.item_id);
+            return {
+              id: m.id,
+              itemId: m.item_id,
+              itemName: invItem ? invItem.name : 'Unknown Item',
+              date: m.date,
+              displayedQty: m.displayed_qty,
+              soldQty: m.sold_qty
+            };
+          });
+          setStockMovements(mappedMovements);
+        }
+
+        // 7. Load audit logs (depends on inventory item names)
+        const { data: dbLogs } = await client.from('audit_log_entries').select('*').order('created_at', { ascending: false });
+        if (dbLogs) {
+          const mappedLogs: AuditLogEntry[] = dbLogs.map((l: any) => {
+            const invItem = dbInventory.find(i => i.id === l.item_id);
+            return {
+              id: l.id,
+              itemId: l.item_id,
+              itemName: invItem ? invItem.name : 'Unknown Item',
+              auditDate: l.audit_date,
+              physicalCount: l.physical_count,
+              recordedCount: l.recorded_count,
+              discrepancy: l.discrepancy,
+              auditedBy: l.audited_by,
+              notes: l.notes || undefined
+            };
+          });
+          setAuditLogs(mappedLogs);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to sync databases from Supabase:', err);
+    }
   }, []);
+
+  // --- Supabase Live Load Effect & Auth Listener ---
+  useEffect(() => {
+    loadSupabaseData();
+
+    const client = supabase;
+    if (!isSupabaseConfigured || !client) return;
+
+    // Refresh database whenever admin signs in or session token is refreshed
+    const { data: { subscription } } = client.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        loadSupabaseData();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [loadSupabaseData]);
 
   // --- Filtered products list calculation ---
   const filteredProducts = useMemo(() => {
@@ -345,13 +361,72 @@ export function useMenuController() {
     });
   };
 
+  const addDiyDrink = (product: Product) => {
+    if (product.category !== 'drinks') return;
+    setDiySelection(prev => {
+      const currentDrinks = prev.drinks || [];
+      const existing = currentDrinks.find(d => d.product.id === product.id);
+      if (existing) {
+        return {
+          ...prev,
+          drinks: currentDrinks.map(d =>
+            d.product.id === product.id ? { ...d, quantity: d.quantity + 1 } : d
+          )
+        };
+      } else {
+        return {
+          ...prev,
+          drinks: [...currentDrinks, { product, quantity: 1 }]
+        };
+      }
+    });
+  };
+
+  const removeDiyDrink = (product: Product) => {
+    if (product.category !== 'drinks') return;
+    setDiySelection(prev => {
+      const currentDrinks = prev.drinks || [];
+      const existing = currentDrinks.find(d => d.product.id === product.id);
+      if (!existing) return prev;
+
+      if (existing.quantity <= 1) {
+        return {
+          ...prev,
+          drinks: currentDrinks.filter(d => d.product.id !== product.id)
+        };
+      } else {
+        return {
+          ...prev,
+          drinks: currentDrinks.map(d =>
+            d.product.id === product.id ? { ...d, quantity: d.quantity - 1 } : d
+          )
+        };
+      }
+    });
+  };
+
   const setDiyDrink = (product: Product | null) => {
     if (product && product.category !== 'drinks') return;
-    setDiySelection(prev => ({ ...prev, drink: product }));
+    if (product) {
+      addDiyDrink(product);
+    } else {
+      setDiySelection(prev => ({ ...prev, drinks: [], drink: null }));
+    }
+  };
+
+  const setEntireDiySelection = (selection: DIYSelection) => {
+    setDiySelection({
+      ramyeon: selection.ramyeon,
+      toppings: selection.toppings || [],
+      drinks: selection.drinks && selection.drinks.length > 0 
+        ? selection.drinks 
+        : (selection.drink ? [{ product: selection.drink, quantity: 1 }] : []),
+      drink: selection.drink || null
+    });
   };
 
   const resetDiyBuilder = () => {
-    setDiySelection({ ramyeon: null, toppings: [], drink: null });
+    setDiySelection({ ramyeon: null, toppings: [], drinks: [], drink: null });
   };
 
   const diyTotal = useMemo(() => {
@@ -360,9 +435,174 @@ export function useMenuController() {
     diySelection.toppings.forEach(t => {
       total += t.product.price * t.quantity;
     });
-    if (diySelection.drink) total += diySelection.drink.price;
+    if (diySelection.drinks && diySelection.drinks.length > 0) {
+      diySelection.drinks.forEach(d => {
+        total += d.product.price * d.quantity;
+      });
+    } else if (diySelection.drink) {
+      total += diySelection.drink.price;
+    }
     return total;
   }, [diySelection]);
+
+  // --- Customer Cart States & Actions ---
+  const [cart, setCart] = useState<CartItem[]>(() => {
+    const saved = localStorage.getItem('bbk_customer_cart');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error('Failed to parse cart:', e);
+      }
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('bbk_customer_cart', JSON.stringify(cart));
+  }, [cart]);
+
+  const addBowlToCart = (selection: DIYSelection, label?: string): boolean => {
+    const hasDrinks = (selection.drinks && selection.drinks.length > 0) || !!selection.drink;
+    if (!selection.ramyeon && selection.toppings.length === 0 && !hasDrinks) {
+      showToast('Cannot add an empty bowl. Select at least a noodle base, topping, or drink!', 'error');
+      return false;
+    }
+
+    let bowlPrice = 0;
+    if (selection.ramyeon) bowlPrice += selection.ramyeon.price;
+    selection.toppings.forEach(t => {
+      bowlPrice += t.product.price * t.quantity;
+    });
+    const normalizedDrinks = selection.drinks && selection.drinks.length > 0
+      ? selection.drinks
+      : (selection.drink ? [{ product: selection.drink, quantity: 1 }] : []);
+
+    normalizedDrinks.forEach(d => {
+      bowlPrice += d.product.price * d.quantity;
+    });
+
+    const bowlCount = cart.filter(item => item.type === 'bowl').length + 1;
+    const bowlName = label?.trim() || `Bowl #${bowlCount}: ${selection.ramyeon ? selection.ramyeon.name : 'Custom Mix'}`;
+
+    const newCartItem: CartItem = {
+      id: `bowl_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      name: bowlName,
+      type: 'bowl',
+      price: bowlPrice,
+      quantity: 1,
+      bowlDetails: {
+        ramyeon: selection.ramyeon,
+        toppings: [...selection.toppings],
+        drinks: [...normalizedDrinks],
+        drink: normalizedDrinks[0]?.product || null
+      }
+    };
+
+    setCart(prev => [...prev, newCartItem]);
+    showToast(`"${bowlName}" added to order!`, 'success');
+    return true;
+  };
+
+  const updateBowlInCart = (id: string, selection: DIYSelection, label?: string): boolean => {
+    const hasDrinks = (selection.drinks && selection.drinks.length > 0) || !!selection.drink;
+    if (!selection.ramyeon && selection.toppings.length === 0 && !hasDrinks) {
+      showToast('Cannot save an empty bowl. Select at least a noodle base, topping, or drink!', 'error');
+      return false;
+    }
+
+    let bowlPrice = 0;
+    if (selection.ramyeon) bowlPrice += selection.ramyeon.price;
+    selection.toppings.forEach(t => {
+      bowlPrice += t.product.price * t.quantity;
+    });
+    const normalizedDrinks = selection.drinks && selection.drinks.length > 0
+      ? selection.drinks
+      : (selection.drink ? [{ product: selection.drink, quantity: 1 }] : []);
+
+    normalizedDrinks.forEach(d => {
+      bowlPrice += d.product.price * d.quantity;
+    });
+
+    const updatedName = label?.trim();
+
+    setCart(prev =>
+      prev.map(item => {
+        if (item.id === id) {
+          const finalName = updatedName || item.name;
+          return {
+            ...item,
+            name: finalName,
+            price: bowlPrice,
+            bowlDetails: {
+              ramyeon: selection.ramyeon,
+              toppings: [...selection.toppings],
+              drinks: [...normalizedDrinks],
+              drink: normalizedDrinks[0]?.product || null
+            }
+          };
+        }
+        return item;
+      })
+    );
+
+    showToast(`Bowl updated successfully!`, 'success');
+    return true;
+  };
+
+  const addProductToCart = (product: Product, quantity = 1) => {
+    setCart(prev => {
+      const existing = prev.find(item => item.type === 'product' && item.product?.id === product.id);
+      if (existing) {
+        return prev.map(item =>
+          item.id === existing.id
+            ? { ...item, quantity: item.quantity + quantity }
+            : item
+        );
+      } else {
+        const newItem: CartItem = {
+          id: `prod_${Date.now()}_${product.id}`,
+          name: product.name,
+          type: 'product',
+          price: product.price,
+          quantity,
+          product
+        };
+        return [...prev, newItem];
+      }
+    });
+    showToast(`Added "${product.name}" to order!`, 'success');
+  };
+
+  const updateCartQuantity = (id: string, delta: number) => {
+    setCart(prev => {
+      return prev.map(item => {
+        if (item.id === id) {
+          const newQty = item.quantity + delta;
+          return newQty > 0 ? { ...item, quantity: newQty } : null;
+        }
+        return item;
+      }).filter(Boolean) as CartItem[];
+    });
+  };
+
+  const removeCartItem = (id: string) => {
+    setCart(prev => prev.filter(item => item.id !== id));
+    showToast('Item removed from order.', 'info');
+  };
+
+  const clearCart = () => {
+    setCart([]);
+    showToast('Order cart cleared.', 'info');
+  };
+
+  const cartTotal = useMemo(() => {
+    return cart.reduce((acc, item) => acc + item.price * item.quantity, 0);
+  }, [cart]);
+
+  const cartItemCount = useMemo(() => {
+    return cart.reduce((acc, item) => acc + item.quantity, 0);
+  }, [cart]);
 
   // --- Category CRUD Actions ---
   const addCategory = async (newCat: Omit<Category, 'id'>) => {
@@ -522,12 +762,14 @@ export function useMenuController() {
       let ramyeon = prev.ramyeon;
       let drink = prev.drink;
       let toppings = prev.toppings;
+      let drinks = prev.drinks || [];
 
       if (ramyeon?.id === id) ramyeon = null;
       if (drink?.id === id) drink = null;
       toppings = toppings.filter(t => t.product.id !== id);
+      drinks = drinks.filter(d => d.product.id !== id);
 
-      return { ramyeon, toppings, drink };
+      return { ramyeon, toppings, drinks, drink };
     });
 
     // Delete matching inventory item
@@ -950,6 +1192,9 @@ export function useMenuController() {
     addTopping,
     removeTopping,
     setDiyDrink,
+    addDiyDrink,
+    removeDiyDrink,
+    setEntireDiySelection,
     resetDiyBuilder,
     diyTotal,
 
@@ -959,6 +1204,20 @@ export function useMenuController() {
 
     // Maintenance Mode State & Action
     maintenanceMode,
-    updateMaintenanceMode
+    updateMaintenanceMode,
+
+    // Data Refresh Action
+    refreshData: loadSupabaseData,
+
+    // Customer Cart States & Actions
+    cart,
+    addBowlToCart,
+    updateBowlInCart,
+    addProductToCart,
+    updateCartQuantity,
+    removeCartItem,
+    clearCart,
+    cartTotal,
+    cartItemCount
   };
 }
