@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { Product, DIYSelection, ContactInfo, InventoryItem, CartItem } from '../../models/MenuModel';
+import type { Product, DIYSelection, ContactInfo, InventoryItem, CartItem, CustomerOrder } from '../../models/MenuModel';
 import AuthModal from '../../components/common/AuthModal';
 
 interface DiyBuilderProps {
@@ -26,6 +26,9 @@ interface DiyBuilderProps {
   clearCart: () => void;
   cartTotal: number;
   cartItemCount: number;
+  cookingFee?: number;
+  submitCustomerOrder?: (order: CustomerOrder) => CustomerOrder;
+  showToast?: (message: string, type?: 'success' | 'error' | 'info') => void;
 }
 
 export default function DiyBuilder({
@@ -51,7 +54,10 @@ export default function DiyBuilder({
   removeCartItem,
   clearCart,
   cartTotal,
-  cartItemCount
+  cartItemCount,
+  cookingFee = 20,
+  submitCustomerOrder,
+  showToast
 }: DiyBuilderProps) {
   // Filter products dynamically from database state so that admin modifications show up here
   const ramyeons = products.filter(p => p.category === 'ramyeon');
@@ -61,6 +67,23 @@ export default function DiyBuilder({
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [bowlNickname, setBowlNickname] = useState('');
   const [editingBowlId, setEditingBowlId] = useState<string | null>(null);
+
+  // Dining preference and transaction number states
+  const [diningOption, setDiningOption] = useState<'dine-in' | 'takeout'>('dine-in');
+  const [currentTxnNumber, setCurrentTxnNumber] = useState<string>(() => `TXN-${Math.floor(100000 + Math.random() * 900000)}`);
+
+  // Clear customer order and cart after receipt download to avoid spamming
+  const handleReceiptDownloaded = () => {
+    clearCart();
+    resetDiyBuilder();
+    setEditingBowlId(null);
+    setBowlNickname('');
+    const savedTxn = currentTxnNumber;
+    setCurrentTxnNumber(`TXN-${Math.floor(100000 + Math.random() * 900000)}`);
+    if (showToast) {
+      showToast(`Receipt downloaded! Order #${savedTxn} registered and cart cleared to prevent duplicate submissions.`, 'success');
+    }
+  };
 
   // Accordion state for Step 1, 2, 3 to allow customers to collapse and scroll short
   const [expandedSteps, setExpandedSteps] = useState<{ [key: number]: boolean }>({
@@ -98,6 +121,11 @@ export default function DiyBuilder({
   const selectedDrinksTotal = selectedDrinks.reduce((acc, d) => acc + d.product.price * d.quantity, 0);
 
   const hasCurrentBowl = !!(diySelection.ramyeon || diySelection.toppings.length > 0 || selectedDrinks.length > 0);
+
+  // Calculations for bowls, cooking fees, and totals
+  const effectiveBowlCount = cart.filter(item => item.type === 'bowl').length + (hasCurrentBowl && !editingBowlId ? 1 : 0);
+  const effectiveCookingFee = diningOption === 'dine-in' ? (cookingFee * Math.max(1, effectiveBowlCount)) : 0;
+  const currentSubtotal = cartTotal + (hasCurrentBowl && !editingBowlId ? diyTotal : 0);
 
   const handleAddBowlToOrder = () => {
     if (!hasCurrentBowl) return;
@@ -200,10 +228,32 @@ export default function DiyBuilder({
       setBowlNickname('');
     }
 
+    // Generate fresh unique transaction code
+    const newTxn = `TXN-${Math.floor(100000 + Math.random() * 900000)}`;
+    setCurrentTxnNumber(newTxn);
+
+    // Save order record for POS scanning & tracking
+    if (submitCustomerOrder) {
+      const newOrderRecord: CustomerOrder = {
+        transactionNumber: newTxn,
+        createdAt: new Date().toISOString(),
+        diningOption,
+        customerName: clientUser?.name,
+        customerPhone: clientUser?.phone,
+        customerEmail: clientUser?.email,
+        items: itemsToProcess,
+        cookingFee: effectiveCookingFee,
+        subtotal: totalToProcess,
+        total: totalToProcess + effectiveCookingFee,
+        status: 'pending'
+      };
+      submitCustomerOrder(newOrderRecord);
+    }
+
     if (!clientUser) {
       setIsAuthModalOpen(true);
     } else {
-      proceedToBookingForm(clientUser, itemsToProcess, totalToProcess, countToProcess);
+      proceedToBookingForm(clientUser, itemsToProcess, totalToProcess, countToProcess, newTxn);
     }
   };
 
@@ -211,14 +261,20 @@ export default function DiyBuilder({
     prefilledUser?: { name?: string; phone?: string; email?: string } | null,
     itemsToUse?: CartItem[],
     totalToUse?: number,
-    countToUse?: number
+    countToUse?: number,
+    txnToUse?: string
   ) => {
     // Generate combined summary of all items and bowls in the cart
     const activeItems = itemsToUse || cart;
     const effectiveTotal = totalToUse !== undefined ? totalToUse : cartTotal;
     const effectiveCount = countToUse !== undefined ? countToUse : cartItemCount;
+    const activeTxn = txnToUse || currentTxnNumber;
 
-    let summary = `Hi B.B.K. Ramyeon Hauz! I'd like to book a dine-in reservation for our group.\n`;
+    let summary = `Hi B.B.K. Ramyeon Hauz! I'd like to submit our order.\n`;
+    summary += `Transaction #: ${activeTxn}\n`;
+    summary += `Dining Preference: ${diningOption === 'dine-in' ? 'Dine-In (DIY Induction Pots)' : 'Takeout (Raw Pack)'}\n`;
+    summary += `Cooking Fee: ₱${effectiveCookingFee} (${diningOption === 'dine-in' ? `${effectiveBowlCount} bowl(s)` : 'Takeout Waived'})\n`;
+    summary += `Grand Total: ₱${effectiveTotal + effectiveCookingFee}\n\n`;
     summary += `Here is our group order (${effectiveCount} items):\n\n`;
 
     activeItems.forEach((item) => {
@@ -247,8 +303,12 @@ export default function DiyBuilder({
       summary += `\n`;
     });
 
-    summary += `Estimated Grand Total: ₱${effectiveTotal}\n`;
-    summary += `Please reserve a table for our group!`;
+    summary += `Estimated Grand Total: ₱${effectiveTotal + effectiveCookingFee}\n`;
+    if (diningOption === 'dine-in') {
+      summary += `Please reserve our table and induction pots for our group!`;
+    } else {
+      summary += `Please prepare our raw takeout packages for pick-up!`;
+    }
 
     // Copy into booking form message input
     const messageInput = document.getElementById('inquiry-message') as HTMLTextAreaElement;
@@ -901,14 +961,77 @@ export default function DiyBuilder({
                 </div>
               )}
 
-              {/* Total Summary */}
-              <div className="border-t border-dashed border-[#5B240B]/20 pt-3 flex justify-between items-center">
-                <span className="text-[11px] font-bold text-slate-400 tracking-wider">
-                  ORDER TOTAL ({cartItemCount + (hasCurrentBowl && !editingBowlId ? 1 : 0)} items)
-                </span>
-                <span className="text-[#D65113] font-black text-xl">
-                  ₱{cartTotal + (hasCurrentBowl && !editingBowlId ? diyTotal : 0)}
-                </span>
+              {/* Dining Option Selector (Dine-In vs Takeout) */}
+              <div className="border-t border-dashed border-[#5B240B]/20 pt-3 flex flex-col gap-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    Dining Preference
+                  </span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    diningOption === 'dine-in' 
+                      ? 'bg-orange-100 text-[#D65113]' 
+                      : 'bg-emerald-100 text-emerald-700'
+                  }`}>
+                    {diningOption === 'dine-in' ? `+₱${cookingFee} Cooking Fee / bowl` : '₱0 Cooking Fee (Takeout)'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setDiningOption('dine-in')}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all border-none cursor-pointer flex items-center justify-center gap-1.5 ${
+                      diningOption === 'dine-in'
+                        ? 'bg-[#5B240B] text-white shadow-xs'
+                        : 'bg-transparent text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>🍜</span>
+                    <span>Dine-In</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setDiningOption('takeout')}
+                    className={`py-2 px-3 rounded-lg text-xs font-bold transition-all border-none cursor-pointer flex items-center justify-center gap-1.5 ${
+                      diningOption === 'takeout'
+                        ? 'bg-[#5B240B] text-white shadow-xs'
+                        : 'bg-transparent text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>🥡</span>
+                    <span>Takeout</span>
+                  </button>
+                </div>
+                <p className="text-[10px] text-slate-400 m-0 leading-tight">
+                  {diningOption === 'dine-in'
+                    ? 'Includes induction pot cooking, boiling broth, and utensils at the hauz.'
+                    : 'Raw, uncooked ramyeon packs & toppings packaged safely for takeout.'}
+                </p>
+              </div>
+
+              {/* Total Summary Breakdown */}
+              <div className="border-t border-dashed border-[#5B240B]/20 pt-3 flex flex-col gap-1.5">
+                <div className="flex justify-between items-center text-xs text-slate-500 font-medium">
+                  <span>Items Subtotal</span>
+                  <span>₱{currentSubtotal}</span>
+                </div>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-500 font-medium">
+                    Cooking Fee ({diningOption === 'dine-in' ? `${effectiveBowlCount} bowl${effectiveBowlCount > 1 ? 's' : ''}` : 'Takeout'})
+                  </span>
+                  <span className={`font-bold ${diningOption === 'dine-in' ? 'text-[#D65113]' : 'text-emerald-600'}`}>
+                    {diningOption === 'dine-in' ? `+₱${effectiveCookingFee}` : '₱0 (FREE)'}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center pt-1.5 border-t border-slate-100">
+                  <span className="text-[11px] font-bold text-slate-400 tracking-wider">
+                    ORDER TOTAL ({cartItemCount + (hasCurrentBowl && !editingBowlId ? 1 : 0)} items)
+                  </span>
+                  <span className="text-[#D65113] font-black text-xl">
+                    ₱{currentSubtotal + effectiveCookingFee}
+                  </span>
+                </div>
               </div>
 
               {/* Main Checkout Button */}
@@ -922,9 +1045,7 @@ export default function DiyBuilder({
                     : 'bg-[#D65113] hover:bg-[#5B240B] text-white shadow-[#D65113]/15 hover:shadow-lg'
                 }`}
               >
-                {cart.length > 0 
-                  ? `Book Dine-In / Submit Order (${cartItemCount + (hasCurrentBowl && !editingBowlId ? 1 : 0)} items)`
-                  : 'Book Dine-In / Submit Order'}
+                {diningOption === 'dine-in' ? 'Book Dine-In / Submit Order' : 'Submit Takeout Order'} ({cartItemCount + (hasCurrentBowl && !editingBowlId ? 1 : 0)} items)
               </button>
             </div>
 
@@ -946,6 +1067,9 @@ export default function DiyBuilder({
         diyTotal={diyTotal}
         cart={cart}
         cartTotal={cartTotal}
+        diningOption={diningOption}
+        cookingFee={effectiveCookingFee}
+        transactionNumber={currentTxnNumber}
         onAuthSuccess={(user) => {
           setClientUser(user);
           proceedToBookingForm(user);
@@ -953,6 +1077,7 @@ export default function DiyBuilder({
         onProceedAsGuest={() => {
           proceedToBookingForm();
         }}
+        onReceiptDownloaded={handleReceiptDownloaded}
       />
     </section>
   );

@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
-import type { Product, CategoryId, DIYSelection, Inquiry, InventoryItem, AuditLogEntry, StockMovement, Category, CartItem } from '../models/MenuModel';
+import type { Product, CategoryId, DIYSelection, Inquiry, InventoryItem, AuditLogEntry, StockMovement, Category, CartItem, CustomerOrder } from '../models/MenuModel';
 import { PRODUCTS, CATEGORIES } from '../data/menuData';
 import { supabase, isSupabaseConfigured } from '../lib/supabaseClient';
 
@@ -47,6 +47,68 @@ export function useMenuController() {
         console.error('Failed to update maintenance settings in Supabase:', err);
       }
     }
+  };
+
+  // --- Global DIY Cooking Fee State ---
+  const [cookingFee, setCookingFee] = useState<number>(() => {
+    const saved = localStorage.getItem('bbk_cooking_fee');
+    if (saved) {
+      const parsed = parseFloat(saved);
+      if (!isNaN(parsed) && parsed >= 0) return parsed;
+    }
+    return 20; // Default ₱20 cooking fee for dine-in induction pots
+  });
+
+  const updateCookingFee = async (amount: number) => {
+    const validAmount = Math.max(0, amount);
+    setCookingFee(validAmount);
+    localStorage.setItem('bbk_cooking_fee', validAmount.toString());
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { error } = await supabase.from('store_settings').upsert({
+          key: 'cooking_fee',
+          value: { fee: validAmount }
+        });
+        if (error) {
+          console.error('Failed to update cooking fee in Supabase:', error);
+          showToast(`Database update failed: ${error.message}`, 'error');
+        } else {
+          showToast(`Dine-in cooking fee updated to ₱${validAmount.toFixed(2)}.`, 'success');
+        }
+      } catch (err) {
+        console.error('Failed to update cooking fee in Supabase:', err);
+      }
+    } else {
+      showToast(`Dine-in cooking fee updated to ₱${validAmount.toFixed(2)}.`, 'success');
+    }
+  };
+
+  // --- Customer Orders State & POS Integration ---
+  const [orders, setOrders] = useState<CustomerOrder[]>(() => {
+    const saved = localStorage.getItem('bbk_customer_orders');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error('Failed to parse saved customer orders:', e);
+      }
+    }
+    return [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem('bbk_customer_orders', JSON.stringify(orders));
+  }, [orders]);
+
+  const submitCustomerOrder = (order: CustomerOrder): CustomerOrder => {
+    setOrders(prev => [order, ...prev.filter(o => o.transactionNumber !== order.transactionNumber)]);
+    return order;
+  };
+
+  const lookupOrder = (transactionNumber: string): CustomerOrder | undefined => {
+    const cleanTxn = transactionNumber.trim().toUpperCase();
+    return orders.find(o => o.transactionNumber.toUpperCase() === cleanTxn);
   };
 
   // --- Categories State ---
@@ -207,76 +269,95 @@ export function useMenuController() {
         setProducts(mappedProducts);
       }
 
-      // 3. Load store settings (like maintenance mode)
+      // 3. Load store settings (like maintenance mode and cooking fee)
       const { data: dbSettings } = await client.from('store_settings').select('*').eq('key', 'maintenance_mode').maybeSingle();
       if (dbSettings && dbSettings.value) {
         setMaintenanceMode(dbSettings.value as any);
       }
 
-      // 4. Load inquiries (visible if authenticated admin)
-      const { data: dbInquiries } = await client.from('inquiries').select('*').order('created_at', { ascending: false });
-      if (dbInquiries) {
-        const mappedInquiries: Inquiry[] = dbInquiries.map((i: any) => ({
-          id: i.id,
-          name: i.name,
-          phone: i.phone,
-          email: i.email || undefined,
-          message: i.message || '',
-          status: i.status as 'pending' | 'completed',
-          timestamp: i.timestamp
-        }));
-        setInquiries(mappedInquiries);
+      const { data: dbCookingFee } = await client.from('store_settings').select('*').eq('key', 'cooking_fee').maybeSingle();
+      if (dbCookingFee && dbCookingFee.value && typeof dbCookingFee.value.fee === 'number') {
+        setCookingFee(dbCookingFee.value.fee);
       }
 
-      // 5. Load inventory (visible if authenticated admin)
-      const { data: dbInventory } = await client.from('inventory').select('*');
-      if (dbInventory && dbInventory.length > 0) {
-        const mappedInventory: InventoryItem[] = dbInventory.map((i: any) => ({
+      // Check if user is in administrative portal context
+      const isAdminContext = window.location.search.includes('admin=true') || sessionStorage.getItem('bbk_admin_auth') === 'true';
+
+      // 4. Load inquiries (strictly restricted to administrative context)
+      if (isAdminContext) {
+        const { data: dbInquiries } = await client.from('inquiries').select('*').order('created_at', { ascending: false });
+        if (dbInquiries) {
+          const mappedInquiries: Inquiry[] = dbInquiries.map((i: any) => ({
+            id: i.id,
+            name: i.name,
+            phone: i.phone,
+            email: i.email || undefined,
+            message: i.message || '',
+            status: i.status as 'pending' | 'completed',
+            timestamp: i.timestamp
+          }));
+          setInquiries(mappedInquiries);
+        }
+      }
+
+      // 5. Load inventory (selective columns for public visitors, full ledger for admin context)
+      const inventoryColumns = isAdminContext
+        ? 'id, name, current_stock, min_stock_level, unit, category, last_audited'
+        : 'id, name, current_stock, unit, category';
+
+      const { data: dbInventory } = await client.from('inventory').select(inventoryColumns as any);
+      if (dbInventory && (dbInventory as any[]).length > 0) {
+        const inventoryRows = dbInventory as any[];
+        const mappedInventory: InventoryItem[] = inventoryRows.map((i: any) => ({
           id: i.id,
           name: i.name,
           currentStock: i.current_stock,
-          minStockLevel: i.min_stock_level,
+          minStockLevel: i.min_stock_level ?? 0,
           unit: i.unit,
           category: i.category,
           lastAudited: i.last_audited || undefined
         }));
         setInventory(mappedInventory);
 
-        // 6. Load stock movements (depends on inventory item names)
-        const { data: dbMovements } = await client.from('stock_movements').select('*').order('created_at', { ascending: false });
-        if (dbMovements) {
-          const mappedMovements: StockMovement[] = dbMovements.map((m: any) => {
-            const invItem = dbInventory.find(i => i.id === m.item_id);
-            return {
-              id: m.id,
-              itemId: m.item_id,
-              itemName: invItem ? invItem.name : 'Unknown Item',
-              date: m.date,
-              displayedQty: m.displayed_qty,
-              soldQty: m.sold_qty
-            };
-          });
-          setStockMovements(mappedMovements);
+        // 6. Load stock movements (only needed for admin portal context)
+        if (isAdminContext) {
+          const { data: dbMovements } = await client.from('stock_movements').select('*').order('created_at', { ascending: false });
+          if (dbMovements) {
+            const mappedMovements: StockMovement[] = dbMovements.map((m: any) => {
+              const invItem = inventoryRows.find((i: any) => i.id === m.item_id);
+              return {
+                id: m.id,
+                itemId: m.item_id,
+                itemName: invItem ? invItem.name : 'Unknown Item',
+                date: m.date,
+                displayedQty: m.displayed_qty,
+                soldQty: m.sold_qty
+              };
+            });
+            setStockMovements(mappedMovements);
+          }
         }
 
-        // 7. Load audit logs (depends on inventory item names)
-        const { data: dbLogs } = await client.from('audit_log_entries').select('*').order('created_at', { ascending: false });
-        if (dbLogs) {
-          const mappedLogs: AuditLogEntry[] = dbLogs.map((l: any) => {
-            const invItem = dbInventory.find(i => i.id === l.item_id);
-            return {
-              id: l.id,
-              itemId: l.item_id,
-              itemName: invItem ? invItem.name : 'Unknown Item',
-              auditDate: l.audit_date,
-              physicalCount: l.physical_count,
-              recordedCount: l.recorded_count,
-              discrepancy: l.discrepancy,
-              auditedBy: l.audited_by,
-              notes: l.notes || undefined
-            };
-          });
-          setAuditLogs(mappedLogs);
+        // 7. Load audit logs (only needed for admin portal context)
+        if (isAdminContext) {
+          const { data: dbLogs } = await client.from('audit_log_entries').select('*').order('created_at', { ascending: false });
+          if (dbLogs) {
+            const mappedLogs: AuditLogEntry[] = dbLogs.map((l: any) => {
+              const invItem = inventoryRows.find((i: any) => i.id === l.item_id);
+              return {
+                id: l.id,
+                itemId: l.item_id,
+                itemName: invItem ? invItem.name : 'Unknown Item',
+                auditDate: l.audit_date,
+                physicalCount: l.physical_count,
+                recordedCount: l.recorded_count,
+                discrepancy: l.discrepancy,
+                auditedBy: l.audited_by,
+                notes: l.notes || undefined
+              };
+            });
+            setAuditLogs(mappedLogs);
+          }
         }
       }
     } catch (err) {
@@ -1218,6 +1299,15 @@ export function useMenuController() {
     removeCartItem,
     clearCart,
     cartTotal,
-    cartItemCount
+    cartItemCount,
+
+    // Cooking Fee State & Actions
+    cookingFee,
+    updateCookingFee,
+
+    // Customer Orders State & POS Lookup Actions
+    orders,
+    submitCustomerOrder,
+    lookupOrder
   };
 }

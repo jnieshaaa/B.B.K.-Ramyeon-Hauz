@@ -76,7 +76,16 @@ function App() {
     removeCartItem,
     clearCart,
     cartTotal,
-    cartItemCount
+    cartItemCount,
+
+    // Cooking Fee State & Actions
+    cookingFee,
+    updateCookingFee,
+
+    // Customer Orders State & POS Lookup Actions
+    orders,
+    submitCustomerOrder,
+    lookupOrder
   } = useMenuController();
 
   // Dynamic Contact Information State (backed by localStorage)
@@ -196,6 +205,10 @@ function App() {
           showToast={showToast}
           maintenanceMode={maintenanceMode}
           updateMaintenanceMode={updateMaintenanceMode}
+          cookingFee={cookingFee}
+          updateCookingFee={updateCookingFee}
+          orders={orders}
+          lookupOrder={lookupOrder}
         />
         <Toast toast={toast} />
       </>
@@ -277,13 +290,24 @@ function App() {
               clearCart={clearCart}
               cartTotal={cartTotal}
               cartItemCount={cartItemCount}
+              cookingFee={cookingFee}
+              submitCustomerOrder={submitCustomerOrder}
+              showToast={showToast}
             />
           </>
         )}
       </main>
 
       {/* 5. Inquiries, Map & Contact Form (Footer Layout View) */}
-      <Footer contactInfo={contactInfo} submitInquiry={submitInquiry} />
+      <Footer 
+        contactInfo={contactInfo} 
+        submitInquiry={submitInquiry} 
+        onInquirySubmitted={() => {
+          clearCart();
+          resetDiyBuilder();
+          showToast('Order request sent successfully! Your order cart has been cleared.', 'success');
+        }}
+      />
       <Toast toast={toast} />
     </>
   );

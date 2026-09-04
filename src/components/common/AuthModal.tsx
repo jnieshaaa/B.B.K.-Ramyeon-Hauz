@@ -12,8 +12,12 @@ interface AuthModalProps {
   diyTotal?: number;
   cart?: CartItem[];
   cartTotal?: number;
+  diningOption?: 'dine-in' | 'takeout';
+  cookingFee?: number;
+  transactionNumber?: string;
   onAuthSuccess: (user: { email: string; name?: string; phone?: string }) => void;
   onProceedAsGuest: () => void;
+  onReceiptDownloaded?: () => void;
 }
 
 export default function AuthModal({
@@ -24,8 +28,12 @@ export default function AuthModal({
   diyTotal,
   cart,
   cartTotal,
+  diningOption = 'dine-in',
+  cookingFee = 0,
+  transactionNumber,
   onAuthSuccess,
-  onProceedAsGuest
+  onProceedAsGuest,
+  onReceiptDownloaded
 }: AuthModalProps) {
   const [activeTab, setActiveTab] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
@@ -173,13 +181,21 @@ export default function AuthModal({
     setLoading(false);
   };
 
-  const handleDownloadReceiptClick = () => {
-    downloadEInvoiceReceipt({
+  const handleDownloadReceiptClick = async () => {
+    await downloadEInvoiceReceipt({
       cart,
       cartTotal,
       diySelection,
-      diyTotal
+      diyTotal,
+      diningOption,
+      cookingFee,
+      transactionNumber,
+      customerName: name.trim() || undefined
     });
+    if (onReceiptDownloaded) {
+      onReceiptDownloaded();
+    }
+    onClose();
   };
 
   return (

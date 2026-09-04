@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import type { Product, Category, InventoryItem, StockMovement, ContactInfo } from '../../../models/MenuModel';
+import type { Product, Category, InventoryItem, StockMovement, ContactInfo, CustomerOrder } from '../../../models/MenuModel';
 import { formatCurrency, formatDateTime } from '../../../utils/formatters';
 import { downloadEInvoiceReceipt } from '../../../utils/receiptGenerator';
 
@@ -12,7 +12,6 @@ interface PosCompletedSale {
   orderNumber: string;
   timestamp: string;
   orderType: 'Dine-In' | 'Takeout' | 'Delivery';
-  tableNumber: string;
   customerName: string;
   items: PosOrderItem[];
   subtotal: number;
@@ -32,6 +31,9 @@ interface PosTerminalViewProps {
   logStockMovement: (entry: Omit<StockMovement, 'id' | 'itemName'>) => Promise<void>;
   contactInfo: ContactInfo;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
+  cookingFee?: number;
+  orders?: CustomerOrder[];
+  lookupOrder?: (transactionNumber: string) => CustomerOrder | undefined;
 }
 
 export default function PosTerminalView({
@@ -40,13 +42,19 @@ export default function PosTerminalView({
   inventory,
   logStockMovement,
   contactInfo,
-  showToast
+  showToast,
+  cookingFee = 20,
+  orders = [],
+  lookupOrder
 }: PosTerminalViewProps) {
   // Order ticket state
   const [orderItems, setOrderItems] = useState<PosOrderItem[]>([]);
   const [orderType, setOrderType] = useState<'Dine-In' | 'Takeout' | 'Delivery'>('Dine-In');
-  const [tableNumber, setTableNumber] = useState('Table 1');
   const [customerName, setCustomerName] = useState('');
+
+  // Transaction Scan / Lookup state
+  const [scanTxnInput, setScanTxnInput] = useState('');
+  const [loadedTxn, setLoadedTxn] = useState<string | null>(null);
 
   // Filtering states
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -142,7 +150,84 @@ export default function PosTerminalView({
       setDiscountType('none');
       setCustomDiscount(0);
       setCustomerName('');
+      setLoadedTxn(null);
     }
+  };
+
+  // Load customer order via scanned QR code or typed transaction number
+  const handleLoadCustomerOrder = (txnInput?: string) => {
+    const code = (txnInput || scanTxnInput).trim().toUpperCase();
+    if (!code) {
+      showToast('Please enter or scan a transaction number.', 'error');
+      return;
+    }
+
+    const order = lookupOrder ? lookupOrder(code) : orders.find(o => o.transactionNumber.toUpperCase() === code);
+    if (!order) {
+      showToast(`Order with transaction number "${code}" was not found.`, 'error');
+      return;
+    }
+
+    // Set order type and customer name
+    setOrderType(order.diningOption === 'dine-in' ? 'Dine-In' : 'Takeout');
+    if (order.customerName) {
+      setCustomerName(order.customerName);
+    }
+
+    // Convert order items to PosOrderItem array
+    const newItems: PosOrderItem[] = [];
+
+    order.items.forEach((cartItem) => {
+      if (cartItem.type === 'bowl' && cartItem.bowlDetails) {
+        if (cartItem.bowlDetails.ramyeon) {
+          const r = cartItem.bowlDetails.ramyeon;
+          const ex = newItems.find((i) => i.product.id === r.id);
+          if (ex) ex.quantity += cartItem.quantity;
+          else newItems.push({ product: r, quantity: cartItem.quantity });
+        }
+        if (cartItem.bowlDetails.toppings) {
+          cartItem.bowlDetails.toppings.forEach((t) => {
+            const ex = newItems.find((i) => i.product.id === t.product.id);
+            if (ex) ex.quantity += t.quantity * cartItem.quantity;
+            else newItems.push({ product: t.product, quantity: t.quantity * cartItem.quantity });
+          });
+        }
+        if (cartItem.bowlDetails.drinks) {
+          cartItem.bowlDetails.drinks.forEach((d) => {
+            const ex = newItems.find((i) => i.product.id === d.product.id);
+            if (ex) ex.quantity += d.quantity * cartItem.quantity;
+            else newItems.push({ product: d.product, quantity: d.quantity * cartItem.quantity });
+          });
+        } else if (cartItem.bowlDetails.drink) {
+          const d = cartItem.bowlDetails.drink;
+          const ex = newItems.find((i) => i.product.id === d.id);
+          if (ex) ex.quantity += cartItem.quantity;
+          else newItems.push({ product: d, quantity: cartItem.quantity });
+        }
+      } else if (cartItem.product) {
+        const ex = newItems.find((i) => i.product.id === cartItem.product!.id);
+        if (ex) ex.quantity += cartItem.quantity;
+        else newItems.push({ product: cartItem.product, quantity: cartItem.quantity });
+      }
+    });
+
+    // If dine-in and cooking fee > 0, include cooking fee in POS ticket
+    if (order.diningOption === 'dine-in' && order.cookingFee > 0) {
+      const feeProduct: Product = {
+        id: 'fee_cooking',
+        name: 'Induction Cooking Fee',
+        price: order.cookingFee,
+        category: 'toppings',
+        description: 'Dine-In induction pot cooking fee',
+        image: ''
+      };
+      newItems.push({ product: feeProduct, quantity: 1 });
+    }
+
+    setOrderItems(newItems);
+    setLoadedTxn(order.transactionNumber);
+    setScanTxnInput('');
+    showToast(`Loaded Order #${order.transactionNumber} (${order.diningOption.toUpperCase()}) with ${order.items.length} item(s)!`, 'success');
   };
 
   // Financial calculations
@@ -204,8 +289,7 @@ export default function PosTerminalView({
       orderNumber,
       timestamp: new Date().toISOString(),
       orderType,
-      tableNumber: orderType === 'Dine-In' ? tableNumber : 'N/A',
-      customerName: customerName.trim() || 'Walk-in Customer',
+      customerName: customerName.trim() || 'Counter Customer',
       items: [...orderItems],
       subtotal,
       discountType,
@@ -229,8 +313,7 @@ export default function PosTerminalView({
     setDiscountType('none');
     setCustomDiscount(0);
     setCustomerName('');
-    setTableNumber('Table 1');
-    setPaymentMethod('Cash');
+    setLoadedTxn(null);
     setAmountTendered('');
     setPaymentReference('');
   };
@@ -251,7 +334,10 @@ export default function PosTerminalView({
 
     downloadEInvoiceReceipt({
       cart: cartFormat,
-      cartTotal: completedSale.totalDue
+      cartTotal: completedSale.totalDue,
+      transactionNumber: completedSale.orderNumber,
+      diningOption: completedSale.orderType === 'Dine-In' ? 'dine-in' : 'takeout',
+      customerName: completedSale.customerName
     });
   };
 
@@ -266,6 +352,55 @@ export default function PosTerminalView({
       {/* 1. LEFT COLUMN: Menu Catalog & Fast Item Selector */}
       <div className="flex-1 flex flex-col bg-white border border-slate-200 rounded-3xl p-5 shadow-sm overflow-hidden min-w-0">
         
+        {/* QR Scan / Transaction Number Lookup Banner */}
+        <div className="bg-orange-50/70 border border-[#D65113]/25 rounded-2xl p-3 mb-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-[#D65113] text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+              </svg>
+            </div>
+            <div>
+              <span className="text-xs font-black text-[#5B240B] block leading-tight">Order Lookup / Scan QR</span>
+              <span className="text-[10px] text-slate-500 block leading-tight">Enter or scan e-invoice TXN # to load customer order ticket</span>
+            </div>
+          </div>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleLoadCustomerOrder();
+            }}
+            className="flex items-center gap-2 flex-1 max-w-md"
+          >
+            <div className="relative flex-1">
+              <input
+                type="text"
+                className="w-full pl-3 pr-7 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 placeholder-slate-400 focus:border-[#D65113] outline-none transition-all box-border uppercase font-mono"
+                placeholder="TXN-XXXXXX or scan QR..."
+                value={scanTxnInput}
+                onChange={(e) => setScanTxnInput(e.target.value)}
+              />
+              {scanTxnInput && (
+                <button
+                  type="button"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer font-bold text-sm"
+                  onClick={() => setScanTxnInput('')}
+                >
+                  &times;
+                </button>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              className="px-4 py-2 bg-[#D65113] hover:bg-[#5B240B] text-white rounded-xl text-xs font-bold transition-all border-none cursor-pointer outline-none shrink-0 shadow-sm"
+            >
+              Load Order
+            </button>
+          </form>
+        </div>
+
         {/* Search and Category Filter Header */}
         <div className="flex flex-col gap-3 pb-4 border-b border-slate-100 shrink-0">
           <div className="flex items-center justify-between gap-4">
@@ -402,6 +537,18 @@ export default function PosTerminalView({
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
               <h3 className="text-sm font-black text-[#5B240B] m-0">Current Order Ticket</h3>
+              {loadedTxn && (
+                <span className="text-[10px] font-black bg-orange-100 text-[#D65113] border border-[#D65113]/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <span>#{loadedTxn}</span>
+                  <button
+                    type="button"
+                    onClick={() => setLoadedTxn(null)}
+                    className="text-[#D65113] hover:text-red-600 bg-transparent border-none cursor-pointer p-0 leading-none font-bold"
+                  >
+                    &times;
+                  </button>
+                </span>
+              )}
             </div>
             {orderItems.length > 0 && (
               <button
@@ -415,66 +562,58 @@ export default function PosTerminalView({
           </div>
 
           {/* Dine-In / Takeout Toggle */}
-          <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl">
-            {(['Dine-In', 'Takeout', 'Delivery'] as const).map((type) => (
-              <button
-                key={type}
-                type="button"
-                className={`py-1.5 rounded-lg text-xs font-bold transition-all border-none cursor-pointer ${
-                  orderType === type
-                    ? 'bg-white text-[#5B240B] shadow-xs'
-                    : 'bg-transparent text-slate-500 hover:text-slate-800'
-                }`}
-                onClick={() => setOrderType(type)}
-              >
-                {type}
-              </button>
-            ))}
-          </div>
-
-          {/* Table / Customer Reference Input */}
-          <div className="grid grid-cols-2 gap-2">
-            {orderType === 'Dine-In' ? (
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Table #</label>
-                <select
-                  className="w-full mt-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none"
-                  value={tableNumber}
-                  onChange={(e) => setTableNumber(e.target.value)}
+          <div className="flex flex-col gap-1.5">
+            <div className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl">
+              {(['Dine-In', 'Takeout', 'Delivery'] as const).map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  className={`py-1.5 rounded-lg text-xs font-bold transition-all border-none cursor-pointer ${
+                    orderType === type
+                      ? 'bg-white text-[#5B240B] shadow-xs'
+                      : 'bg-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                  onClick={() => setOrderType(type)}
                 >
-                  <option value="Table 1">Table 1</option>
-                  <option value="Table 2">Table 2</option>
-                  <option value="Table 3">Table 3</option>
-                  <option value="Table 4">Table 4</option>
-                  <option value="Table 5">Table 5</option>
-                  <option value="Table 6">Table 6</option>
-                  <option value="Bar Table A">Bar Table A</option>
-                  <option value="Bar Table B">Bar Table B</option>
-                </select>
-              </div>
-            ) : (
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Order Note</label>
-                <input
-                  type="text"
-                  placeholder="e.g. For Pickup"
-                  className="w-full mt-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none box-border"
-                  value={tableNumber}
-                  onChange={(e) => setTableNumber(e.target.value)}
-                />
+                  {type}
+                </button>
+              ))}
+            </div>
+
+            {orderType === 'Dine-In' && cookingFee > 0 && (
+              <div className="flex items-center justify-between px-1 text-[11px]">
+                <span className="text-slate-400">Fee: ₱{cookingFee}/bowl</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const feeProd: Product = {
+                      id: 'fee_cooking',
+                      name: 'Induction Cooking Fee',
+                      price: cookingFee,
+                      category: 'toppings',
+                      description: 'Dine-in pot induction cooking fee',
+                      image: ''
+                    };
+                    handleAddItem(feeProd);
+                  }}
+                  className="text-[#D65113] hover:underline font-bold bg-transparent border-none cursor-pointer p-0"
+                >
+                  + Add Cooking Fee (₱{cookingFee})
+                </button>
               </div>
             )}
+          </div>
 
-            <div>
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Customer Name</label>
-              <input
-                type="text"
-                placeholder="Optional name"
-                className="w-full mt-1 px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-800 outline-none box-border"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-              />
-            </div>
+          {/* Customer / Order Note Input */}
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Customer Name / Order Tag (Optional)</label>
+            <input
+              type="text"
+              placeholder="e.g. Maria, Order #12, or Counter"
+              className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:bg-white focus:border-[#D65113] box-border font-sans"
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+            />
           </div>
         </div>
 
@@ -621,7 +760,7 @@ export default function PosTerminalView({
               <div>
                 <h3 className="text-base font-black text-slate-900 m-0">Payment Tender</h3>
                 <p className="text-xs text-slate-500 m-0 mt-0.5">
-                  {orderType} • {orderType === 'Dine-In' ? tableNumber : 'Takeout'}
+                  {orderType} • {customerName.trim() || 'Counter Customer'}
                 </p>
               </div>
               <button
@@ -800,12 +939,6 @@ export default function PosTerminalView({
                     <span>Mode:</span>
                     <strong className="text-[#D65113]">{completedSale.orderType}</strong>
                   </div>
-                  {completedSale.orderType === 'Dine-In' && (
-                    <div className="flex justify-between">
-                      <span>Table:</span>
-                      <span>{completedSale.tableNumber}</span>
-                    </div>
-                  )}
                   <div className="flex justify-between">
                     <span>Customer:</span>
                     <span>{completedSale.customerName}</span>

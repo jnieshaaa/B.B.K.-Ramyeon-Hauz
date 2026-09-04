@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import type { Product, Inquiry, InventoryItem, AuditLogEntry, StockMovement, ContactInfo, Category } from '../../models/MenuModel';
+import type { Product, Inquiry, InventoryItem, AuditLogEntry, StockMovement, ContactInfo, Category, CustomerOrder } from '../../models/MenuModel';
 import AdminLogin from './AdminLogin';
 import AdminSidebar from '../../components/layout/AdminSidebar';
 import DashboardOverview from './views/OverviewView';
@@ -49,6 +49,14 @@ interface AdminDashboardProps {
   // Maintenance props
   maintenanceMode: { active: boolean; message: string };
   updateMaintenanceMode: (active: boolean, message?: string) => Promise<void>;
+
+  // Cooking fee props
+  cookingFee?: number;
+  updateCookingFee?: (fee: number) => Promise<void>;
+
+  // Customer orders props
+  orders?: CustomerOrder[];
+  lookupOrder?: (transactionNumber: string) => CustomerOrder | undefined;
 }
 
 export default function AdminDashboard({
@@ -76,7 +84,11 @@ export default function AdminDashboard({
   deleteCategory,
   showToast,
   maintenanceMode,
-  updateMaintenanceMode
+  updateMaintenanceMode,
+  cookingFee,
+  updateCookingFee,
+  orders,
+  lookupOrder
 }: AdminDashboardProps) {
   // Authentication State
   const [username, setUsername] = useState('');
@@ -296,6 +308,9 @@ export default function AdminDashboard({
                 logStockMovement={logStockMovement}
                 contactInfo={contactInfo}
                 showToast={showToast}
+                cookingFee={cookingFee}
+                orders={orders}
+                lookupOrder={lookupOrder}
               />
             )}
 
@@ -346,6 +361,8 @@ export default function AdminDashboard({
                 updateContactInfo={updateContactInfo}
                 maintenanceMode={maintenanceMode}
                 updateMaintenanceMode={updateMaintenanceMode}
+                cookingFee={cookingFee}
+                updateCookingFee={updateCookingFee}
               />
             )}
           </div>

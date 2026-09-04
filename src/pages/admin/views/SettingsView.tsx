@@ -6,13 +6,17 @@ interface SettingsManagerProps {
   updateContactInfo: (newInfo: ContactInfo) => void;
   maintenanceMode: { active: boolean; message: string };
   updateMaintenanceMode: (active: boolean, message?: string) => Promise<void>;
+  cookingFee?: number;
+  updateCookingFee?: (fee: number) => Promise<void>;
 }
 
 export default function SettingsManager({ 
   contactInfo, 
   updateContactInfo,
   maintenanceMode,
-  updateMaintenanceMode
+  updateMaintenanceMode,
+  cookingFee = 20,
+  updateCookingFee
 }: SettingsManagerProps) {
   const [phone, setPhone] = useState(contactInfo.phone);
   const [email, setEmail] = useState(contactInfo.email);
@@ -23,6 +27,28 @@ export default function SettingsManager({
   const [landmarkFront, setLandmarkFront] = useState(contactInfo.landmarkFront);
 
   const [saving, setSaving] = useState(false);
+
+  // Cooking fee state
+  const [feeInput, setFeeInput] = useState<string>(cookingFee.toString());
+  const [feeSaving, setFeeSaving] = useState(false);
+
+  useEffect(() => {
+    setFeeInput(cookingFee.toString());
+  }, [cookingFee]);
+
+  const handleSaveCookingFee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = parseFloat(feeInput);
+    if (isNaN(parsed) || parsed < 0) {
+      alert('Please enter a valid non-negative cooking fee amount.');
+      return;
+    }
+    setFeeSaving(true);
+    if (updateCookingFee) {
+      await updateCookingFee(parsed);
+    }
+    setFeeSaving(false);
+  };
 
   // Maintenance states
   const [mtActive, setMtActive] = useState(maintenanceMode.active);
@@ -116,6 +142,70 @@ export default function SettingsManager({
             </button>
           </div>
         )}
+      </div>
+
+      {/* DIY Induction Cooking Fee Configuration Card */}
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 box-border">
+        <div className="flex flex-col gap-1 mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-orange-50 text-[#D65113] flex items-center justify-center font-bold text-base">
+              ♨️
+            </div>
+            <div>
+              <h3 className="text-base font-extrabold text-slate-900 m-0">DIY Cooking Fee (Dine-In)</h3>
+              <p className="text-xs text-slate-400 m-0">Set the cooking fee charged for dine-in induction pot cooking.</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-amber-50/60 border border-amber-200/70 rounded-xl p-3 mb-4 text-xs text-amber-900 leading-relaxed">
+          <span className="font-bold">How it works:</span> When customers select <strong>Dine-In</strong> on their order or at the counter, this fee covers induction burner power, boiling water, soup broth, and utensils. If they select <strong>Takeout</strong> (raw packs), the cooking fee is automatically waived (₱0.00).
+        </div>
+
+        <form onSubmit={handleSaveCookingFee} className="flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+            <div className="relative w-full sm:w-48">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-sm">₱</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                className="w-full pl-8 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-sans text-sm font-bold text-slate-900 focus:border-[#D65113] focus:bg-white focus:ring-4 focus:ring-[#D65113]/10 outline-none transition-all box-border"
+                placeholder="20"
+                value={feeInput}
+                onChange={(e) => setFeeInput(e.target.value)}
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={feeSaving}
+              className="w-full sm:w-auto px-5 py-2.5 bg-[#D65113] hover:bg-[#5B240B] text-white rounded-xl font-bold text-xs shadow-md shadow-[#D65113]/15 cursor-pointer transition-all border-none outline-none disabled:opacity-50"
+            >
+              {feeSaving ? 'Saving...' : 'Save Cooking Fee'}
+            </button>
+          </div>
+
+          {/* Quick Preset Buttons */}
+          <div className="flex items-center gap-2 pt-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Presets:</span>
+            {[0, 15, 20, 25, 30].map((preset) => (
+              <button
+                key={preset}
+                type="button"
+                onClick={() => setFeeInput(preset.toString())}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors cursor-pointer outline-none ${
+                  feeInput === preset.toString()
+                    ? 'bg-orange-100 border-[#D65113] text-[#D65113]'
+                    : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                ₱{preset}
+              </button>
+            ))}
+          </div>
+        </form>
       </div>
 
       {/* Footer Info Details Editor */}

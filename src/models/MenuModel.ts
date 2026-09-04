@@ -88,3 +88,19 @@ export interface ContactInfo {
   landmarkNear: string;
   landmarkFront: string;
 }
+
+export interface CustomerOrder {
+  transactionNumber: string;
+  createdAt: string;
+  diningOption: 'dine-in' | 'takeout';
+  customerName?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  items: CartItem[];
+  diySelection?: DIYSelection;
+  cookingFee: number;
+  subtotal: number;
+  total: number;
+  status: 'pending' | 'completed' | 'cancelled';
+}
+

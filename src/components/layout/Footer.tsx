@@ -4,9 +4,10 @@ import type { Inquiry, ContactInfo } from '../../models/MenuModel';
 interface FooterProps {
   contactInfo: ContactInfo;
   submitInquiry: (inquiry: Omit<Inquiry, 'id' | 'status' | 'timestamp'>) => void;
+  onInquirySubmitted?: () => void;
 }
 
-export default function Footer({ contactInfo, submitInquiry }: FooterProps) {
+export default function Footer({ contactInfo, submitInquiry, onInquirySubmitted }: FooterProps) {
   const [formData, setFormData] = useState({
     name: '',
     phone: '',
@@ -31,9 +32,12 @@ export default function Footer({ contactInfo, submitInquiry }: FooterProps) {
     });
 
     setTimeout(() => {
-      alert(`Thank you, ${formData.name}! Your inquiry for B.B.K. Ramyeon Hauz has been received. We will contact you at ${formData.phone} shortly.`);
+      alert(`Thank you, ${formData.name}! Your order inquiry for B.B.K. Ramyeon Hauz has been received. We will contact you at ${formData.phone} shortly.`);
       setFormData({ name: '', phone: '', email: '', message: '' });
       setSubmitted(false);
+      if (onInquirySubmitted) {
+        onInquirySubmitted();
+      }
     }, 800);
   };
 
