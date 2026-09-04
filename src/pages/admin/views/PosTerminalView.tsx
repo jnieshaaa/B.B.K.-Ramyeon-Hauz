@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import type { Product, Category, InventoryItem, StockMovement, ContactInfo, CustomerOrder } from '../../../models/MenuModel';
 import { formatCurrency, formatDateTime } from '../../../utils/formatters';
 import { downloadEInvoiceReceipt } from '../../../utils/receiptGenerator';
+import QrCameraScannerModal from '../../../components/common/QrCameraScannerModal';
 
 interface PosOrderItem {
   product: Product;
@@ -55,6 +56,12 @@ export default function PosTerminalView({
   // Transaction Scan / Lookup state
   const [scanTxnInput, setScanTxnInput] = useState('');
   const [loadedTxn, setLoadedTxn] = useState<string | null>(null);
+
+  // Mobile active tab view ('catalog' vs 'ticket')
+  const [mobileTab, setMobileTab] = useState<'catalog' | 'ticket'>('catalog');
+
+  // Live Camera QR Scanner Modal state
+  const [isScannerModalOpen, setIsScannerModalOpen] = useState(false);
 
   // Filtering states
   const [activeCategory, setActiveCategory] = useState<string>('all');
@@ -227,8 +234,14 @@ export default function PosTerminalView({
     setOrderItems(newItems);
     setLoadedTxn(order.transactionNumber);
     setScanTxnInput('');
+    setMobileTab('ticket'); // Automatically switch to ticket view on mobile
     showToast(`Loaded Order #${order.transactionNumber} (${order.diningOption.toUpperCase()}) with ${order.items.length} item(s)!`, 'success');
   };
+
+  // Total unit count in the order ticket
+  const totalTicketUnits = useMemo(() => {
+    return orderItems.reduce((acc, item) => acc + item.quantity, 0);
+  }, [orderItems]);
 
   // Financial calculations
   const subtotal = useMemo(() => {
@@ -347,59 +360,123 @@ export default function PosTerminalView({
   };
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 h-[calc(100vh-140px)] min-h-[600px] font-sans">
+    <div className="flex flex-col gap-4 font-sans min-h-[calc(100vh-140px)]">
       
-      {/* 1. LEFT COLUMN: Menu Catalog & Fast Item Selector */}
-      <div className="flex-1 flex flex-col bg-white border border-slate-200 rounded-3xl p-5 shadow-sm overflow-hidden min-w-0">
-        
-        {/* QR Scan / Transaction Number Lookup Banner */}
-        <div className="bg-orange-50/70 border border-[#D65113]/25 rounded-2xl p-3 mb-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#D65113] text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-              </svg>
+      {/* Mobile Top Segmented Tab Switcher (Catalog & Scan vs Order Ticket) */}
+      <div className="lg:hidden flex items-center gap-1.5 p-1.5 bg-slate-200/80 rounded-2xl shrink-0">
+        <button
+          type="button"
+          onClick={() => setMobileTab('catalog')}
+          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all border-none cursor-pointer flex items-center justify-center gap-1.5 ${
+            mobileTab === 'catalog'
+              ? 'bg-[#5B240B] text-white shadow-sm font-black'
+              : 'bg-transparent text-slate-700 hover:text-slate-900'
+          }`}
+        >
+          <span>🍜</span>
+          <span>Catalog & QR Scan</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setMobileTab('ticket')}
+          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-bold transition-all border-none cursor-pointer flex items-center justify-center gap-1.5 ${
+            mobileTab === 'ticket'
+              ? 'bg-[#5B240B] text-white shadow-sm font-black'
+              : 'bg-transparent text-slate-700 hover:text-slate-900'
+          }`}
+        >
+          <span>🧾</span>
+          <span>Ticket ({totalTicketUnits})</span>
+          {totalDue > 0 && (
+            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${
+              mobileTab === 'ticket' ? 'bg-orange-100 text-[#D65113]' : 'bg-white text-[#D65113]'
+            }`}>
+              ₱{totalDue}
+            </span>
+          )}
+        </button>
+      </div>
+
+      <div className="flex flex-col lg:flex-row gap-6 lg:h-[calc(100vh-160px)] min-h-[500px]">
+        {/* 1. LEFT COLUMN: Menu Catalog & Fast Item Selector */}
+        <div className={`flex-1 flex flex-col bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-sm overflow-hidden min-w-0 ${
+          mobileTab === 'catalog' ? 'flex' : 'hidden lg:flex'
+        }`}>
+          
+          {/* QR Scan / Transaction Number Lookup Banner */}
+          <div className="bg-gradient-to-r from-orange-50 via-amber-50 to-orange-50/70 border border-[#D65113]/30 rounded-2xl p-3.5 mb-3.5 shadow-xs flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+            <div className="flex items-center justify-between gap-2.5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-[#D65113] text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                  </svg>
+                </div>
+                <div>
+                  <span className="text-xs sm:text-sm font-black text-[#5B240B] block leading-tight">Order Lookup & Scanner</span>
+                  <span className="text-[10px] sm:text-[11px] text-slate-500 block leading-tight">Scan receipt QR or enter TXN code</span>
+                </div>
+              </div>
+
+              {/* Mobile Quick Camera Scanner Button */}
+              <button
+                type="button"
+                onClick={() => setIsScannerModalOpen(true)}
+                className="sm:hidden px-3 py-2 bg-[#D65113] active:bg-[#5B240B] text-white rounded-xl text-xs font-bold transition-all border-none cursor-pointer flex items-center gap-1.5 shadow-sm shrink-0"
+              >
+                <span>📷</span>
+                <span>Scan QR</span>
+              </button>
             </div>
-            <div>
-              <span className="text-xs font-black text-[#5B240B] block leading-tight">Order Lookup / Scan QR</span>
-              <span className="text-[10px] text-slate-500 block leading-tight">Enter or scan e-invoice TXN # to load customer order ticket</span>
+
+            <div className="flex items-center gap-2 flex-1 max-w-lg">
+              {/* Desktop Camera Scanner Button */}
+              <button
+                type="button"
+                onClick={() => setIsScannerModalOpen(true)}
+                className="hidden sm:flex px-3.5 py-2 bg-[#5B240B] hover:bg-[#D65113] text-white rounded-xl text-xs font-bold transition-all border-none cursor-pointer items-center gap-1.5 shadow-sm shrink-0"
+                title="Open device camera scanner"
+              >
+                <span>📷</span>
+                <span>Scan QR (Camera)</span>
+              </button>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleLoadCustomerOrder();
+                }}
+                className="flex items-center gap-2 flex-1 min-w-0"
+              >
+                <div className="relative flex-1 min-w-0">
+                  <input
+                    type="text"
+                    className="w-full pl-3 pr-7 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 placeholder-slate-400 focus:border-[#D65113] outline-none transition-all box-border uppercase font-mono shadow-xs"
+                    placeholder="TXN-XXXXXX or code..."
+                    value={scanTxnInput}
+                    onChange={(e) => setScanTxnInput(e.target.value)}
+                  />
+                  {scanTxnInput && (
+                    <button
+                      type="button"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer font-bold text-sm"
+                      onClick={() => setScanTxnInput('')}
+                    >
+                      &times;
+                    </button>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  className="px-3.5 sm:px-4 py-2 bg-[#D65113] hover:bg-[#5B240B] text-white rounded-xl text-xs font-bold transition-all border-none cursor-pointer outline-none shrink-0 shadow-sm"
+                >
+                  Load
+                </button>
+              </form>
             </div>
           </div>
-
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleLoadCustomerOrder();
-            }}
-            className="flex items-center gap-2 flex-1 max-w-md"
-          >
-            <div className="relative flex-1">
-              <input
-                type="text"
-                className="w-full pl-3 pr-7 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-900 placeholder-slate-400 focus:border-[#D65113] outline-none transition-all box-border uppercase font-mono"
-                placeholder="TXN-XXXXXX or scan QR..."
-                value={scanTxnInput}
-                onChange={(e) => setScanTxnInput(e.target.value)}
-              />
-              {scanTxnInput && (
-                <button
-                  type="button"
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 border-none bg-transparent cursor-pointer font-bold text-sm"
-                  onClick={() => setScanTxnInput('')}
-                >
-                  &times;
-                </button>
-              )}
-            </div>
-
-            <button
-              type="submit"
-              className="px-4 py-2 bg-[#D65113] hover:bg-[#5B240B] text-white rounded-xl text-xs font-bold transition-all border-none cursor-pointer outline-none shrink-0 shadow-sm"
-            >
-              Load Order
-            </button>
-          </form>
-        </div>
 
         {/* Search and Category Filter Header */}
         <div className="flex flex-col gap-3 pb-4 border-b border-slate-100 shrink-0">
@@ -529,7 +606,9 @@ export default function PosTerminalView({
       </div>
 
       {/* 2. RIGHT COLUMN: POS Register / Order Ticket */}
-      <div className="w-full lg:w-96 flex flex-col bg-white border border-slate-200 rounded-3xl p-5 shadow-sm shrink-0 overflow-hidden">
+      <div className={`w-full lg:w-96 flex flex-col bg-white border border-slate-200 rounded-3xl p-4 sm:p-5 shadow-sm shrink-0 overflow-hidden ${
+        mobileTab === 'ticket' ? 'flex' : 'hidden lg:flex'
+      }`}>
         
         {/* Ticket Top Header & Order Mode */}
         <div className="flex flex-col gap-3 pb-3 border-b border-slate-100 shrink-0">
@@ -743,6 +822,7 @@ export default function PosTerminalView({
             <span>Proceed to Payment ({formatCurrency(totalDue)})</span>
           </button>
         </div>
+      </div>
       </div>
 
       {/* 3. PAYMENT / TENDER CHECKOUT MODAL */}
@@ -1034,6 +1114,38 @@ export default function PosTerminalView({
           </div>
         </div>
       )}
+
+      {/* Mobile Floating Bottom Action: Review Ticket Shortcut */}
+      {mobileTab === 'catalog' && orderItems.length > 0 && (
+        <div className="lg:hidden fixed bottom-4 inset-x-4 z-40 bg-[#5B240B] text-white p-3.5 rounded-2xl shadow-2xl flex items-center justify-between gap-3 animate-slideIn border border-white/10">
+          <div className="flex flex-col">
+            <span className="text-[11px] font-bold text-slate-300">
+              {totalTicketUnits} item{totalTicketUnits > 1 ? 's' : ''} in ticket
+            </span>
+            <span className="text-base font-black text-amber-300">
+              ₱{totalDue}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setMobileTab('ticket')}
+            className="px-4 py-2 bg-[#D65113] active:bg-[#B8400C] text-white rounded-xl text-xs font-black shadow-md border-none cursor-pointer flex items-center gap-1.5"
+          >
+            <span>Review Ticket</span>
+            <span>➔</span>
+          </button>
+        </div>
+      )}
+
+      {/* Live Camera QR Scanner Modal */}
+      <QrCameraScannerModal
+        isOpen={isScannerModalOpen}
+        onClose={() => setIsScannerModalOpen(false)}
+        onScanSuccess={(decodedText) => {
+          handleLoadCustomerOrder(decodedText);
+        }}
+      />
 
     </div>
   );
