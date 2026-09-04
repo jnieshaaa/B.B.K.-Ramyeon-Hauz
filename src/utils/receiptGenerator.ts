@@ -294,51 +294,11 @@ export const downloadEInvoiceReceipt = async ({
   ctx.lineTo(width - 25, y);
   ctx.stroke();
 
-  // Render authentic scannable QR Code containing self-contained order payload
+  // Render authentic clean scannable QR Code
   const qrSize = 130;
   const qrX = (width - qrSize) / 2;
   const qrY = y + 15;
-
-  // Build compact order payload for instantaneous, cross-origin POS scanning
-  const effectiveItemsList: CartItem[] = items.length > 0 ? items : (diySelection && (diySelection.ramyeon || (diySelection.toppings && diySelection.toppings.length > 0)) ? [{
-    id: `diy_${txnNumber}`,
-    name: 'DIY Ramyeon Bowl',
-    type: 'bowl' as const,
-    price: effectiveSubtotal,
-    quantity: 1,
-    bowlDetails: {
-      ramyeon: diySelection.ramyeon,
-      toppings: diySelection.toppings || [],
-      drinks: diySelection.drinks && diySelection.drinks.length > 0
-        ? diySelection.drinks
-        : (diySelection.drink ? [{ product: diySelection.drink, quantity: 1 }] : [])
-    }
-  }] : []);
-
-  const compactOrderPayload = {
-    bbk: 1,
-    txn: txnNumber,
-    opt: diningOption,
-    fee: cookingFee,
-    sub: effectiveSubtotal,
-    tot: grandTotal,
-    name: customerName,
-    items: effectiveItemsList.map((it) => ({
-      id: it.id,
-      n: it.name,
-      p: it.price,
-      q: it.quantity,
-      t: it.type === 'bowl' ? 'b' : 'p',
-      bd: it.bowlDetails ? {
-        r: it.bowlDetails.ramyeon ? { id: it.bowlDetails.ramyeon.id, n: it.bowlDetails.ramyeon.name, p: it.bowlDetails.ramyeon.price } : undefined,
-        tp: it.bowlDetails.toppings?.map((t) => ({ id: t.product.id, n: t.product.name, p: t.product.price, q: t.quantity })),
-        dk: it.bowlDetails.drinks?.map((d) => ({ id: d.product.id, n: d.product.name, p: d.product.price, q: d.quantity }))
-      } : undefined
-    }))
-  };
-
-  const qrData = JSON.stringify(compactOrderPayload);
-  await drawQrCodeToCanvas(ctx, qrData, qrX, qrY, qrSize);
+  await drawQrCodeToCanvas(ctx, txnNumber, qrX, qrY, qrSize);
 
   // Instructions for POS scanning
   y = qrY + qrSize + 18;
