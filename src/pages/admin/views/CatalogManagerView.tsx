@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
-import type { Product, Category } from '../../models/MenuModel';
-import { supabase, isSupabaseConfigured } from '../../lib/supabaseClient';
+import type { Product, Category } from '../../../models/MenuModel';
+import { supabase, isSupabaseConfigured } from '../../../lib/supabaseClient';
 
 interface CatalogManagerProps {
   products: Product[];

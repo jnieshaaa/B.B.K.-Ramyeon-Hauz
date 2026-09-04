@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import type { ContactInfo } from '../../models/MenuModel';
+import type { ContactInfo } from '../../../models/MenuModel';
 
 interface SettingsManagerProps {
   contactInfo: ContactInfo;

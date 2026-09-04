@@ -1,6 +1,6 @@
 interface AdminSidebarProps {
-  currentPage: 'overview' | 'products' | 'bookings' | 'inventory' | 'audit-logs' | 'settings';
-  setCurrentPage: (page: 'overview' | 'products' | 'bookings' | 'inventory' | 'audit-logs' | 'settings') => void;
+  currentPage: 'overview' | 'pos' | 'products' | 'bookings' | 'inventory' | 'audit-logs' | 'settings';
+  setCurrentPage: (page: 'overview' | 'pos' | 'products' | 'bookings' | 'inventory' | 'audit-logs' | 'settings') => void;
   pendingInquiriesCount: number;
   lowStockCount: number;
   onLogout: () => void;
@@ -9,10 +9,11 @@ interface AdminSidebarProps {
 }
 
 interface NavItem {
-  id: 'overview' | 'products' | 'bookings' | 'inventory' | 'audit-logs' | 'settings';
+  id: 'overview' | 'pos' | 'products' | 'bookings' | 'inventory' | 'audit-logs' | 'settings';
   label: string;
   badge?: number;
   badgeClass?: string;
+  isSpecial?: boolean;
 }
 
 export default function AdminSidebar({
@@ -24,14 +25,15 @@ export default function AdminSidebar({
   isOpen,
   onClose
 }: AdminSidebarProps) {
-  const handleNavClick = (page: 'overview' | 'products' | 'bookings' | 'inventory' | 'audit-logs' | 'settings') => {
+  const handleNavClick = (page: 'overview' | 'pos' | 'products' | 'bookings' | 'inventory' | 'audit-logs' | 'settings') => {
     setCurrentPage(page);
     onClose();
   };
 
-  // Define sidebar navigation options dynamically to prevent repetitive markup
+  // Define sidebar navigation options dynamically
   const navItems: NavItem[] = [
     { id: 'overview', label: 'Portal Overview' },
+    { id: 'pos', label: 'POS Terminal Cashier', isSpecial: true },
     { id: 'products', label: 'Product Catalog' },
     {
       id: 'bookings',
@@ -59,8 +61,9 @@ export default function AdminSidebar({
         />
       )}
 
-      <aside className={`fixed md:static inset-y-0 left-0 z-[2050] w-64 bg-[#FAF1D6] text-[#5B240B] flex flex-col shrink-0 border-r border-[#5B240B]/10 font-sans box-border h-full transition-transform duration-300 ${isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-        }`}>
+      <aside className={`fixed md:static inset-y-0 left-0 z-[2050] w-64 bg-[#FAF1D6] text-[#5B240B] flex flex-col shrink-0 border-r border-[#5B240B]/10 font-sans box-border h-full transition-transform duration-300 ${
+        isOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+      }`}>
         {/* Brand logo details header (Dark Top Section) */}
         <div className="p-6 bg-[#5B240B] text-white border-b border-[#FAF1D6]/10 relative">
           <div className="flex items-center gap-3">
@@ -86,25 +89,38 @@ export default function AdminSidebar({
         </div>
 
         {/* Sidebar Nav Buttons */}
-        <nav className="py-6 px-4 flex flex-col gap-1.5 grow">
-          {navItems.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`flex items-center justify-between w-full px-4 py-3 border-none rounded-xl font-bold text-sm text-left cursor-pointer transition-all outline-none ${currentPage === item.id
-                  ? 'bg-[#D65113] text-white shadow-sm shadow-[#D65113]/25'
-                  : 'bg-transparent text-[#5B240B]/85 hover:text-[#D65113] hover:bg-[#5B240B]/5'
+        <nav className="py-6 px-4 flex flex-col gap-1.5 grow overflow-y-auto">
+          {navItems.map((item) => {
+            const isActive = currentPage === item.id;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                className={`flex items-center justify-between w-full px-4 py-3 border-none rounded-xl font-bold text-sm text-left cursor-pointer transition-all outline-none ${
+                  isActive
+                    ? 'bg-[#D65113] text-white shadow-sm shadow-[#D65113]/25'
+                    : item.isSpecial
+                    ? 'bg-amber-500/10 text-amber-900 hover:bg-[#D65113] hover:text-white border border-amber-500/20'
+                    : 'bg-transparent text-[#5B240B]/85 hover:text-[#D65113] hover:bg-[#5B240B]/5'
                 }`}
-              onClick={() => handleNavClick(item.id)}
-            >
-              <span>{item.label}</span>
-              {item.badge !== undefined && item.badge > 0 && (
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${item.badgeClass}`}>
-                  {item.badge}
-                </span>
-              )}
-            </button>
-          ))}
+                onClick={() => handleNavClick(item.id)}
+              >
+                <div className="flex items-center gap-2.5">
+                  {item.id === 'pos' && (
+                    <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    </svg>
+                  )}
+                  <span>{item.label}</span>
+                </div>
+                {item.badge !== undefined && item.badge > 0 && (
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${item.badgeClass}`}>
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </nav>
 
         {/* Footer Profile Section */}

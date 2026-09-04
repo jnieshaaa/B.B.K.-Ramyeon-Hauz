@@ -1,9 +1,9 @@
-interface HeroProps {
+interface HeroSectionProps {
   onExploreClick: () => void;
   onBuildClick: () => void;
 }
 
-export default function Hero({ onExploreClick, onBuildClick }: HeroProps) {
+export default function HeroSection({ onExploreClick, onBuildClick }: HeroSectionProps) {
   return (
     <section className="relative bg-[#FAF1D6] py-16 md:py-24 px-6 md:px-12 font-sans overflow-hidden">
       <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-2 gap-12 items-center">

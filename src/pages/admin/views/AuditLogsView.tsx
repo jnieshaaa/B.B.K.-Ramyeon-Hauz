@@ -1,4 +1,4 @@
-import type { AuditLogEntry } from '../../models/MenuModel';
+import type { AuditLogEntry } from '../../../models/MenuModel';
 
 interface AuditLogsManagerProps {
   auditLogs: AuditLogEntry[];

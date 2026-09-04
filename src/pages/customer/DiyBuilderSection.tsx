@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Product, DIYSelection, ContactInfo, InventoryItem, CartItem } from '../../models/MenuModel';
-import AuthModal from './AuthModal';
+import AuthModal from '../../components/common/AuthModal';
 
 interface DiyBuilderProps {
   products: Product[];

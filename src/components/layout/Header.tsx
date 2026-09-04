@@ -226,4 +226,3 @@ export default function Header({ clientUser, onLogout, cartItemCount = 0, onCart
     </header>
   );
 }
-

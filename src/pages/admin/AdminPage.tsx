@@ -1,13 +1,14 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import type { Product, Inquiry, InventoryItem, AuditLogEntry, StockMovement, ContactInfo, Category } from '../../models/MenuModel';
 import AdminLogin from './AdminLogin';
-import AdminSidebar from './AdminSidebar';
-import DashboardOverview from './DashboardOverview';
-import CatalogManager from './CatalogManager';
-import BookingsManager from './BookingsManager';
-import InventoryManager from './InventoryManager';
-import AuditLogsManager from './AuditLogsManager';
-import SettingsManager from './SettingsManager';
+import AdminSidebar from '../../components/layout/AdminSidebar';
+import DashboardOverview from './views/OverviewView';
+import CatalogManager from './views/CatalogManagerView';
+import BookingsManager from './views/BookingsView';
+import InventoryManager from './views/InventoryView';
+import AuditLogsManager from './views/AuditLogsView';
+import SettingsManager from './views/SettingsView';
+import PosTerminalView from './views/PosTerminalView';
 import { supabase, isSupabaseConfigured } from '../../lib/supabaseClient';
 
 interface AdminDashboardProps {
@@ -121,7 +122,7 @@ export default function AdminDashboard({
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   // Tab navigation page state
-  const [currentPage, setCurrentPage] = useState<'overview' | 'products' | 'bookings' | 'inventory' | 'audit-logs' | 'settings'>('overview');
+  const [currentPage, setCurrentPage] = useState<'overview' | 'pos' | 'products' | 'bookings' | 'inventory' | 'audit-logs' | 'settings'>('overview');
 
   // Calculates quick statistics counts
   const stats = useMemo(() => {
@@ -257,6 +258,7 @@ export default function AdminDashboard({
               </button>
               <h1 className="text-xl md:text-2xl font-extrabold text-slate-800 font-sans tracking-tight truncate">
                 {currentPage === 'overview' && 'Dashboard Overview'}
+                {currentPage === 'pos' && 'Point of Sale (POS) Terminal'}
                 {currentPage === 'products' && 'Product Catalog'}
                 {currentPage === 'bookings' && 'Reservations & Inquiries'}
                 {currentPage === 'inventory' && 'Inventory Ledger'}
@@ -282,6 +284,18 @@ export default function AdminDashboard({
                 inquiries={inquiries}
                 onViewInventory={() => setCurrentPage('inventory')}
                 onViewBookings={() => setCurrentPage('bookings')}
+                onOpenPos={() => setCurrentPage('pos')}
+              />
+            )}
+
+            {currentPage === 'pos' && (
+              <PosTerminalView
+                products={products}
+                categories={categories}
+                inventory={inventory}
+                logStockMovement={logStockMovement}
+                contactInfo={contactInfo}
+                showToast={showToast}
               />
             )}
 

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { Product, CategoryId, Category, InventoryItem } from '../../models/MenuModel';
 
-interface MenuSectionProps {
+interface MenuCatalogSectionProps {
   activeCategory: CategoryId;
   setActiveCategory: (category: CategoryId) => void;
   searchQuery: string;
@@ -12,7 +12,7 @@ interface MenuSectionProps {
   inventory: InventoryItem[];
 }
 
-export default function MenuSection({
+export default function MenuCatalogSection({
   activeCategory,
   setActiveCategory,
   searchQuery,
@@ -21,7 +21,7 @@ export default function MenuSection({
   onAddDiyItem,
   categories,
   inventory
-}: MenuSectionProps) {
+}: MenuCatalogSectionProps) {
   // Prepend virtual 'All Menu' category for customer filters
   const fullCategories = useMemo(() => {
     return [

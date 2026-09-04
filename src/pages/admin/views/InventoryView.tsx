@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import type { InventoryItem, AuditLogEntry, StockMovement, Product } from '../../models/MenuModel';
+import type { InventoryItem, AuditLogEntry, StockMovement, Product } from '../../../models/MenuModel';
 
 interface InventoryManagerProps {
   inventory: InventoryItem[];

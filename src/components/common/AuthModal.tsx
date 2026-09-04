@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { ContactInfo, DIYSelection, CartItem } from '../../models/MenuModel';
 import { supabase, isSupabaseConfigured } from '../../lib/supabaseClient';
 import { sha256 } from '../../utils/crypto';
+import { downloadEInvoiceReceipt } from '../../utils/receiptGenerator';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -79,21 +80,21 @@ export default function AuthModal({
           return;
         }
 
-        // Successfully logged in
-        onAuthSuccess({ email: data.email });
+        onAuthSuccess({
+          email: data.email
+        });
         onClose();
-      } catch (err) {
-        console.error('Client login database error:', err);
-        setErrorMsg('Database error occurred. Please try checking out as a guest.');
+      } catch (err: any) {
+        console.error('Login error:', err);
+        setErrorMsg('Failed to process authentication. Please try again.');
       }
     } else {
-      // Mock local client login for demo
-      if (email.trim().toLowerCase() === 'client@bbk.com' && password === 'client123') {
-        onAuthSuccess({ email: 'client@bbk.com', name: 'Demo Client', phone: '0900 000 0000' });
-        onClose();
-      } else {
-        setErrorMsg('Local demo verification failed. Use client@bbk.com / client123 or proceed as Guest.');
-      }
+      // Mock local fallback
+      onAuthSuccess({
+        email: email.trim().toLowerCase(),
+        name: email.split('@')[0]
+      });
+      onClose();
     }
     setLoading(false);
   };
@@ -103,8 +104,8 @@ export default function AuthModal({
     setErrorMsg('');
     setLoading(true);
 
-    if (!email.trim() || !password.trim() || !name.trim() || !phone.trim()) {
-      setErrorMsg('All fields are required.');
+    if (!name.trim() || !phone.trim() || !email.trim() || !password.trim()) {
+      setErrorMsg('Please fill in all registration fields.');
       setLoading(false);
       return;
     }
@@ -114,7 +115,7 @@ export default function AuthModal({
         const hashedPassword = await sha256(password.trim());
         const clientRoleHash = await sha256('client');
 
-        // 1. Find client role_id
+        // Look up client role id
         const { data: roleData, error: roleError } = await supabase
           .from('roles')
           .select('id')
@@ -122,231 +123,63 @@ export default function AuthModal({
           .single();
 
         if (roleError || !roleData) {
-          setErrorMsg('Error retrieving client registration rules. Please contact shop.');
+          setErrorMsg('Default client permission role is not initialized in database.');
           setLoading(false);
           return;
         }
 
-        // 2. Insert new user
+        // Insert new user
         const { error: insertError } = await supabase
           .from('users')
-          .insert({
-            email: email.trim().toLowerCase(),
-            password_hash: hashedPassword,
-            role_id: roleData.id
-          });
+          .insert([
+            {
+              email: email.trim().toLowerCase(),
+              password_hash: hashedPassword,
+              role_id: roleData.id
+            }
+          ]);
 
         if (insertError) {
           if (insertError.code === '23505') {
-            setErrorMsg('An account with this email address already exists.');
+            setErrorMsg('An account with this email already exists. Please sign in instead.');
           } else {
-            setErrorMsg('Registration failed: ' + insertError.message);
+            setErrorMsg(insertError.message || 'Could not register user account.');
           }
           setLoading(false);
           return;
         }
 
-        // Successfully registered & auto logged in
-        onAuthSuccess({ email: email.trim().toLowerCase(), name: name.trim(), phone: phone.trim() });
-        alert('Account created successfully! Proceeding to reserve your order...');
+        onAuthSuccess({
+          email: email.trim().toLowerCase(),
+          name: name.trim(),
+          phone: phone.trim()
+        });
+        alert(`Account created successfully! Welcome, ${name.trim()}!`);
         onClose();
-      } catch (err) {
-        console.error('Client registration database error:', err);
-        setErrorMsg('Database error occurred. Please try checking out as a guest.');
+      } catch (err: any) {
+        console.error('Registration error:', err);
+        setErrorMsg('Server error during registration. Please try again.');
       }
     } else {
-      // Mock local client register
-      onAuthSuccess({ email: email.trim().toLowerCase(), name: name.trim(), phone: phone.trim() });
+      // Local fallback
+      onAuthSuccess({
+        email: email.trim().toLowerCase(),
+        name: name.trim(),
+        phone: phone.trim()
+      });
       alert('Mock account created successfully!');
       onClose();
     }
     setLoading(false);
   };
 
-  // Helper trigger to download receipt as an e-invoice image
   const handleDownloadReceiptClick = () => {
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const width = 450;
-    const items = (cart && cart.length > 0) ? cart : [];
-    const effectiveTotal = cartTotal || diyTotal || 0;
-
-    // Calculate height dynamically
-    let height = 300;
-    if (items.length > 0) {
-      items.forEach(item => {
-        height += 50;
-        if (item.type === 'bowl' && item.bowlDetails) {
-          if (item.bowlDetails.toppings) height += item.bowlDetails.toppings.length * 22;
-          if (item.bowlDetails.drinks && item.bowlDetails.drinks.length > 0) {
-            height += item.bowlDetails.drinks.length * 22;
-          } else if (item.bowlDetails.drink) {
-            height += 25;
-          }
-        }
-      });
-    } else {
-      const toppingsCount = diySelection?.toppings?.length || 0;
-      const drinksCount = diySelection?.drinks?.length || (diySelection?.drink ? 1 : 0);
-      height = 340 + (toppingsCount > 0 ? 40 + toppingsCount * 28 : 0) + (drinksCount > 0 ? 40 + drinksCount * 28 : 0);
-    }
-
-    canvas.width = width;
-    canvas.height = height;
-
-    // Background
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, width, height);
-
-    // Border outline
-    ctx.strokeStyle = '#5B240B';
-    ctx.lineWidth = 4;
-    ctx.strokeRect(4, 4, width - 8, height - 8);
-
-    // Header Title
-    ctx.fillStyle = '#5B240B';
-    ctx.textAlign = 'center';
-    ctx.font = 'bold 20px Courier New';
-    ctx.fillText('B.B.K. RAMYEON HAUZ', width / 2, 45);
-
-    ctx.font = 'bold 12px Courier New';
-    ctx.fillText('GROUP DINE-IN E-INVOICE', width / 2, 70);
-    ctx.font = '10px Courier New';
-    ctx.fillText('San Pablo City, Philippines', width / 2, 88);
-    ctx.fillText(`Date: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`, width / 2, 105);
-
-    // Dashed Divider
-    ctx.strokeStyle = '#5B240B';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(25, 120);
-    ctx.lineTo(width - 25, 120);
-    ctx.stroke();
-
-    let y = 145;
-
-    if (items.length > 0) {
-      items.forEach((item, index) => {
-        ctx.textAlign = 'left';
-        ctx.font = 'bold 12px Courier New';
-        ctx.fillText(`${index + 1}. ${item.name.toUpperCase()} (x${item.quantity})`, 30, y);
-        ctx.textAlign = 'right';
-        ctx.fillText(`PHP ${item.price * item.quantity}`, width - 35, y);
-        y += 20;
-
-        if (item.type === 'bowl' && item.bowlDetails) {
-          ctx.font = '11px Courier New';
-          if (item.bowlDetails.ramyeon) {
-            ctx.textAlign = 'left';
-            ctx.fillText(`   Base: ${item.bowlDetails.ramyeon.name}`, 35, y);
-            y += 18;
-          }
-          if (item.bowlDetails.toppings && item.bowlDetails.toppings.length > 0) {
-            item.bowlDetails.toppings.forEach(t => {
-              ctx.textAlign = 'left';
-              ctx.fillText(`   + ${t.product.name} (x${t.quantity})`, 35, y);
-              y += 18;
-            });
-          }
-          if (item.bowlDetails.drinks && item.bowlDetails.drinks.length > 0) {
-            item.bowlDetails.drinks.forEach(d => {
-              ctx.textAlign = 'left';
-              ctx.fillText(`   + Drink: ${d.product.name} (x${d.quantity})`, 35, y);
-              y += 18;
-            });
-          } else if (item.bowlDetails.drink) {
-            ctx.textAlign = 'left';
-            ctx.fillText(`   + Drink: ${item.bowlDetails.drink.name}`, 35, y);
-            y += 18;
-          }
-        }
-        y += 8;
-        ctx.setLineDash([2, 2]);
-        ctx.beginPath();
-        ctx.moveTo(30, y);
-        ctx.lineTo(width - 30, y);
-        ctx.stroke();
-        y += 15;
-      });
-    } else if (diySelection) {
-      // Single bowl fallback
-      ctx.textAlign = 'left';
-      ctx.font = 'bold 12px Courier New';
-      ctx.fillText('BASE RAMYEON NOODLE', 30, y);
-      ctx.font = '13px Courier New';
-      ctx.fillText(diySelection.ramyeon ? diySelection.ramyeon.name : 'None Selected', 35, y + 22);
-      ctx.textAlign = 'right';
-      ctx.fillText(diySelection.ramyeon ? `PHP ${diySelection.ramyeon.price}` : 'PHP 0', width - 35, y + 22);
-      y += 45;
-
-      if (diySelection.toppings && diySelection.toppings.length > 0) {
-        diySelection.toppings.forEach(t => {
-          y += 24;
-          ctx.textAlign = 'left';
-          ctx.fillText(`${t.product.name} (x${t.quantity})`, 35, y);
-          ctx.textAlign = 'right';
-          ctx.fillText(`PHP ${t.product.price * t.quantity}`, width - 35, y);
-        });
-        y += 22;
-      }
-
-      const fallbackDrinks = diySelection.drinks && diySelection.drinks.length > 0
-        ? diySelection.drinks
-        : (diySelection.drink ? [{ product: diySelection.drink, quantity: 1 }] : []);
-
-      if (fallbackDrinks.length > 0) {
-        fallbackDrinks.forEach(d => {
-          y += 24;
-          ctx.textAlign = 'left';
-          ctx.fillText(`🥤 ${d.product.name} (x${d.quantity})`, 35, y);
-          ctx.textAlign = 'right';
-          ctx.fillText(`PHP ${d.product.price * d.quantity}`, width - 35, y);
-        });
-        y += 22;
-      }
-    }
-
-    // Total Section
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(25, y);
-    ctx.lineTo(width - 25, y);
-    ctx.stroke();
-    y += 25;
-
-    ctx.textAlign = 'left';
-    ctx.font = 'bold 14px Courier New';
-    ctx.fillText('GRAND TOTAL', 30, y);
-    ctx.textAlign = 'right';
-    ctx.font = 'bold 16px Courier New';
-    ctx.fillText(`PHP ${effectiveTotal}`, width - 35, y);
-
-    // Footer Section
-    y += 25;
-    ctx.setLineDash([4, 4]);
-    ctx.beginPath();
-    ctx.moveTo(25, y);
-    ctx.lineTo(width - 25, y);
-    ctx.stroke();
-    
-    ctx.textAlign = 'center';
-    ctx.font = 'bold 11px Courier New';
-    ctx.fillText('MAKE • EAT • ENJOY', width / 2, y + 25);
-    ctx.font = '9px Courier New';
-    ctx.fillText('Send this e-invoice receipt image to our FB Page/Email', width / 2, y + 42);
-    ctx.fillText('to complete your order reservation.', width / 2, y + 54);
-
-    // Download PNG link trigger
-    const dataUrl = canvas.toDataURL('image/png');
-    const link = document.createElement('a');
-    link.href = dataUrl;
-    link.download = `bbk-group-order-${Date.now()}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadEInvoiceReceipt({
+      cart,
+      cartTotal,
+      diySelection,
+      diyTotal
+    });
   };
 
   return (

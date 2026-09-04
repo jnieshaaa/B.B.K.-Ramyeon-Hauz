@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import type { Inquiry } from '../../models/MenuModel';
+import type { Inquiry } from '../../../models/MenuModel';
 
 interface BookingsManagerProps {
   inquiries: Inquiry[];
